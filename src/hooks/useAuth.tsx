@@ -26,10 +26,13 @@ interface AuthContextValue {
 }
 
 const ROLE_PRIORITY: AppRole[] = [
+  "boss_owner",
   "super_admin",
+  "admin",
   "sales_support_manager",
-  "sales_agent",
-  "support_agent",
+  "sales",
+  "support",
+  "client",
   "customer",
 ];
 
