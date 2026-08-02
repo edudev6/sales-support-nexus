@@ -108,7 +108,7 @@ export function useSafeAssist() {
       const { data: sessionData } = await supabase
         .from('safe_assist_sessions')
         .select('*')
-        .eq('id', result.session_id)
+        .eq('id', String(result.session_id))
         .single();
       
       if (sessionData) {
