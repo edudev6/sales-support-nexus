@@ -3,10 +3,13 @@ import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
 export type AppRole =
+  | "boss_owner"
   | "super_admin"
+  | "admin"
   | "sales_support_manager"
-  | "sales_agent"
-  | "support_agent"
+  | "sales"
+  | "support"
+  | "client"
   | "customer";
 
 interface AuthContextValue {
