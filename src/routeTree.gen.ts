@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SalesCrmRouteImport } from './routes/sales-crm'
+import { Route as SalesSupportManagerRouteImport } from './routes/sales-support-manager'
 import { Route as SupportRouteImport } from './routes/support'
 import { Route as SupportAgentRouteImport } from './routes/support-agent'
 
@@ -22,6 +23,11 @@ const IndexRoute = IndexRouteImport.update({
 const SalesCrmRoute = SalesCrmRouteImport.update({
   id: '/sales-crm',
   path: '/sales-crm',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SalesSupportManagerRoute = SalesSupportManagerRouteImport.update({
+  id: '/sales-support-manager',
+  path: '/sales-support-manager',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SupportRoute = SupportRouteImport.update({
@@ -38,12 +44,14 @@ const SupportAgentRoute = SupportAgentRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/sales-crm': typeof SalesCrmRoute
+  '/sales-support-manager': typeof SalesSupportManagerRoute
   '/support': typeof SupportRoute
   '/support-agent': typeof SupportAgentRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/sales-crm': typeof SalesCrmRoute
+  '/sales-support-manager': typeof SalesSupportManagerRoute
   '/support': typeof SupportRoute
   '/support-agent': typeof SupportAgentRoute
 }
@@ -51,20 +59,38 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/sales-crm': typeof SalesCrmRoute
+  '/sales-support-manager': typeof SalesSupportManagerRoute
   '/support': typeof SupportRoute
   '/support-agent': typeof SupportAgentRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/sales-crm' | '/support' | '/support-agent'
+  fullPaths:
+    | '/'
+    | '/sales-crm'
+    | '/sales-support-manager'
+    | '/support'
+    | '/support-agent'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/sales-crm' | '/support' | '/support-agent'
-  id: '__root__' | '/' | '/sales-crm' | '/support' | '/support-agent'
+  to:
+    | '/'
+    | '/sales-crm'
+    | '/sales-support-manager'
+    | '/support'
+    | '/support-agent'
+  id:
+    | '__root__'
+    | '/'
+    | '/sales-crm'
+    | '/sales-support-manager'
+    | '/support'
+    | '/support-agent'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SalesCrmRoute: typeof SalesCrmRoute
+  SalesSupportManagerRoute: typeof SalesSupportManagerRoute
   SupportRoute: typeof SupportRoute
   SupportAgentRoute: typeof SupportAgentRoute
 }
@@ -83,6 +109,13 @@ declare module '@tanstack/react-router' {
       path: '/sales-crm'
       fullPath: '/sales-crm'
       preLoaderRoute: typeof SalesCrmRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sales-support-manager': {
+      id: '/sales-support-manager'
+      path: '/sales-support-manager'
+      fullPath: '/sales-support-manager'
+      preLoaderRoute: typeof SalesSupportManagerRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/support': {
@@ -105,6 +138,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SalesCrmRoute: SalesCrmRoute,
+  SalesSupportManagerRoute: SalesSupportManagerRoute,
   SupportRoute: SupportRoute,
   SupportAgentRoute: SupportAgentRoute,
 }
