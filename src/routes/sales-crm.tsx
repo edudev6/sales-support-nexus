@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import SalesCRMDemo from "@/components/salespages/crm/SalesCRMDemo";
 
 export const Route = createFileRoute("/sales-crm")({
+  // Dashboard UI is live/interactive; skip SSR so timers and live data hydrate cleanly.
+  ssr: false,
   head: () => ({
     meta: [
       { title: "Sales CRM | Software Vala" },

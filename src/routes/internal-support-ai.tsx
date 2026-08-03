@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import InternalSupportAIPage from "@/components/salespages/InternalSupportAIPage";
 
 export const Route = createFileRoute("/internal-support-ai")({
+  // Dashboard UI is live/interactive; skip SSR so timers and live data hydrate cleanly.
+  ssr: false,
   head: () => ({
     meta: [
       { title: "Internal Support AI | Software Vala" },

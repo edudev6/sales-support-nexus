@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { SupportChatbotDashboard } from "@/components/support-chatbot/SupportChatbotDashboard";
 
 export const Route = createFileRoute("/support-chatbot")({
+  // Dashboard UI is live/interactive; skip SSR so timers and live data hydrate cleanly.
+  ssr: false,
   head: () => ({
     meta: [
       { title: "Support Chatbot Console | Software Vala" },

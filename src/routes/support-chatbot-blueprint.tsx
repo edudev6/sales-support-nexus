@@ -3,6 +3,8 @@ import SupportChatbotWireframe from "@/components/support-chatbot-wireframe/Supp
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 export const Route = createFileRoute("/support-chatbot-blueprint")({
+  // Dashboard UI is live/interactive; skip SSR so timers and live data hydrate cleanly.
+  ssr: false,
   head: () => ({
     meta: [
       { title: "Support Chatbot Blueprint | Software Vala" },

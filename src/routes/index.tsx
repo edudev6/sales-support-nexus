@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import SalesSupportDashboard from "@/components/salespages/SalesSupportDashboard";
 
 export const Route = createFileRoute("/")({
+  // Dashboard UI is live/interactive; skip SSR so timers and live data hydrate cleanly.
+  ssr: false,
   head: () => ({
     meta: [
       { title: "Sales & Support Command Center | Software Vala" },
