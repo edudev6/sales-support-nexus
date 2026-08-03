@@ -15,6 +15,7 @@ import { Route as SalesSupportManagerRouteImport } from './routes/sales-support-
 import { Route as SupportRouteImport } from './routes/support'
 import { Route as SupportAgentRouteImport } from './routes/support-agent'
 import { Route as SupportChatbotRouteImport } from './routes/support-chatbot'
+import { Route as SupportChatbotBlueprintRouteImport } from './routes/support-chatbot-blueprint'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -46,6 +47,11 @@ const SupportChatbotRoute = SupportChatbotRouteImport.update({
   path: '/support-chatbot',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SupportChatbotBlueprintRoute = SupportChatbotBlueprintRouteImport.update({
+  id: '/support-chatbot-blueprint',
+  path: '/support-chatbot-blueprint',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -54,6 +60,7 @@ export interface FileRoutesByFullPath {
   '/support': typeof SupportRoute
   '/support-agent': typeof SupportAgentRoute
   '/support-chatbot': typeof SupportChatbotRoute
+  '/support-chatbot-blueprint': typeof SupportChatbotBlueprintRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -62,6 +69,7 @@ export interface FileRoutesByTo {
   '/support': typeof SupportRoute
   '/support-agent': typeof SupportAgentRoute
   '/support-chatbot': typeof SupportChatbotRoute
+  '/support-chatbot-blueprint': typeof SupportChatbotBlueprintRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -71,6 +79,7 @@ export interface FileRoutesById {
   '/support': typeof SupportRoute
   '/support-agent': typeof SupportAgentRoute
   '/support-chatbot': typeof SupportChatbotRoute
+  '/support-chatbot-blueprint': typeof SupportChatbotBlueprintRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -81,6 +90,7 @@ export interface FileRouteTypes {
     | '/support'
     | '/support-agent'
     | '/support-chatbot'
+    | '/support-chatbot-blueprint'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -89,6 +99,7 @@ export interface FileRouteTypes {
     | '/support'
     | '/support-agent'
     | '/support-chatbot'
+    | '/support-chatbot-blueprint'
   id:
     | '__root__'
     | '/'
@@ -97,6 +108,7 @@ export interface FileRouteTypes {
     | '/support'
     | '/support-agent'
     | '/support-chatbot'
+    | '/support-chatbot-blueprint'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -106,6 +118,7 @@ export interface RootRouteChildren {
   SupportRoute: typeof SupportRoute
   SupportAgentRoute: typeof SupportAgentRoute
   SupportChatbotRoute: typeof SupportChatbotRoute
+  SupportChatbotBlueprintRoute: typeof SupportChatbotBlueprintRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -152,6 +165,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SupportChatbotRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/support-chatbot-blueprint': {
+      id: '/support-chatbot-blueprint'
+      path: '/support-chatbot-blueprint'
+      fullPath: '/support-chatbot-blueprint'
+      preLoaderRoute: typeof SupportChatbotBlueprintRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -162,6 +182,7 @@ const rootRouteChildren: RootRouteChildren = {
   SupportRoute: SupportRoute,
   SupportAgentRoute: SupportAgentRoute,
   SupportChatbotRoute: SupportChatbotRoute,
+  SupportChatbotBlueprintRoute: SupportChatbotBlueprintRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
