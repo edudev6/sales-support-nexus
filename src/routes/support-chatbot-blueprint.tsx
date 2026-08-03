@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import SupportChatbotWireframe from "@/components/support-chatbot-wireframe/SupportChatbotWireframe";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 export const Route = createFileRoute("/support-chatbot-blueprint")({
   head: () => ({
@@ -17,5 +18,13 @@ export const Route = createFileRoute("/support-chatbot-blueprint")({
       },
     ],
   }),
-  component: SupportChatbotWireframe,
+  component: BlueprintPage,
 });
+
+function BlueprintPage() {
+  return (
+    <TooltipProvider>
+      <SupportChatbotWireframe />
+    </TooltipProvider>
+  );
+}
