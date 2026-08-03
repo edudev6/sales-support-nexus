@@ -18,7 +18,7 @@ import {
   Target,
   MessageSquare
 } from 'lucide-react';
-import { useSalesSupportManagerGuard } from '@/hooks/useSalesSupportManagerGuard';
+
 import { SSMAssignedLeads } from '@/components/sales-support-manager/SSMAssignedLeads';
 import { SSMSalesPipeline } from '@/components/sales-support-manager/SSMSalesPipeline';
 import { SSMSupportTickets } from '@/components/sales-support-manager/SSMSupportTickets';
@@ -27,13 +27,13 @@ import { SSMTeamPerformance } from '@/components/sales-support-manager/SSMTeamPe
 import { SSMEscalations } from '@/components/sales-support-manager/SSMEscalations';
 import { SSMReportsAudit } from '@/components/sales-support-manager/SSMReportsAudit';
 import { toast } from 'sonner';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from '@/lib/navigation';
 
 const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 
 export const SecureSalesSupportManagerDashboard: React.FC = () => {
   const navigate = useNavigate();
-  useSalesSupportManagerGuard();
+  
   
   const [activeTab, setActiveTab] = useState('leads');
   const [sessionTime, setSessionTime] = useState(SESSION_TIMEOUT);
@@ -45,7 +45,7 @@ export const SecureSalesSupportManagerDashboard: React.FC = () => {
       setSessionTime(prev => {
         if (prev <= 1000) {
           toast.error('Session expired - logging out');
-          navigate('/auth');
+          navigate('/');
           return 0;
         }
         return prev - 1000;
@@ -68,7 +68,7 @@ export const SecureSalesSupportManagerDashboard: React.FC = () => {
 
   const handleLogout = () => {
     toast.success('Session cleared securely');
-    navigate('/auth');
+    navigate('/');
   };
 
   const formatTime = (ms: number) => {

@@ -5,10 +5,10 @@
 
 import React, { useEffect } from 'react';
 import { InternalSupportAIContainer } from '@/components/internal-support-ai/InternalSupportAIContainer';
-import { useSystemLock } from '@/hooks/useSystemLock';
+
 
 const InternalSupportAI: React.FC = () => {
-  const { lockState, getLockSummary } = useSystemLock();
+  
 
   // Prevent right-click, copy, paste
   useEffect(() => {
