@@ -37,7 +37,11 @@ export const SecureSalesSupportManagerDashboard: React.FC = () => {
   
   const [activeTab, setActiveTab] = useState('leads');
   const [sessionTime, setSessionTime] = useState(SESSION_TIMEOUT);
-  const [valaId] = useState('VL-SSM-' + Math.random().toString(36).substring(2, 8).toUpperCase());
+  const [valaId, setValaId] = useState('VL-SSM-XXXXXX');
+
+  useEffect(() => {
+    setValaId('VL-SSM-' + Math.random().toString(36).substring(2, 8).toUpperCase());
+  }, []);
 
   // Session timeout management
   useEffect(() => {
