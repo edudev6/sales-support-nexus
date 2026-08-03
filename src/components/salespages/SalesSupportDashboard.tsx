@@ -94,7 +94,7 @@ const SalesSupportDashboard = () => {
                 </CardContent>
               </Card>
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-6">
               <LeadInbox />
             </div>
           </div>
@@ -127,7 +127,7 @@ const SalesSupportDashboard = () => {
       className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-cyan-950/20 flex"
     >
       <SalesSupportSidebar activeSection={activeSection as any} onSectionChange={(s) => setActiveSection(s)} collapsed={collapsed} onToggleCollapse={() => setCollapsed(!collapsed)} />
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-w-0">
         <SalesSupportTopBar />
         <main className="flex-1 p-6 overflow-auto">
           <motion.div key={activeSection} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>

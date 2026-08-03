@@ -1,5 +1,4 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "@/lib/navigation";
+import { useState } from "react";
 import { CRMAuthProvider, useCRMAuth } from "@/hooks/useCRMAuth";
 import SalesCRMLayout from "@/components/sales-crm/SalesCRMLayout";
 import SalesCRMDashboard from "./SalesCRMDashboard";
@@ -13,14 +12,7 @@ import { Loader2 } from "lucide-react";
 
 const SalesCRMContent = () => {
   const [activeSection, setActiveSection] = useState("dashboard");
-  const { user, isLoading } = useCRMAuth();
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    if (!isLoading && !user) {
-      navigate('/sales-crm/auth');
-    }
-  }, [user, isLoading, navigate]);
+  const { isLoading } = useCRMAuth();
 
   if (isLoading) {
     return (
@@ -29,8 +21,6 @@ const SalesCRMContent = () => {
       </div>
     );
   }
-
-  if (!user) return null;
 
   const renderContent = () => {
     switch (activeSection) {

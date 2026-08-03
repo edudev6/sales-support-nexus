@@ -159,7 +159,6 @@ const SalesCRMLayout = ({ children, activeSection, onSectionChange }: SalesCRMLa
               <DropdownMenuTrigger asChild>
                 <div className="flex items-center gap-3 pl-4 border-l border-[hsl(225,20%,90%)] cursor-pointer hover:opacity-80">
                   <Avatar className="w-9 h-9">
-                    <AvatarImage src="/placeholder.svg" />
                     <AvatarFallback className="bg-[hsl(225,85%,55%)] text-white">{userInitials}</AvatarFallback>
                   </Avatar>
                   <div className="hidden md:block">
