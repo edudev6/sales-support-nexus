@@ -14,8 +14,10 @@ interface SalesSupportTopBarProps {
   onNotificationAction?: (id: string) => void;
 }
 
+const EMPTY_NOTIFICATIONS: NotificationAlert[] = [];
+
 const SalesSupportTopBar = ({
-  notifications = [],
+  notifications = EMPTY_NOTIFICATIONS,
   onDismissNotification,
   onNotificationAction
 }: SalesSupportTopBarProps) => {
@@ -24,6 +26,7 @@ const SalesSupportTopBar = ({
   useEffect(() => {
     setLocalNotifications(notifications);
   }, [notifications]);
+
 
   const handleDismiss = (id: string) => {
     setLocalNotifications(prev => prev.filter(n => n.id !== id));
