@@ -1,0 +1,22 @@
+import { createFileRoute } from "@tanstack/react-router";
+import SupportDashboard from "@/components/salespages/SupportDashboard";
+
+export const Route = createFileRoute("/support")({
+  head: () => ({
+    meta: [
+      { title: "Support Operations Center | Software Vala" },
+      {
+        name: "description",
+        content:
+          "Omni-channel support operations: ticket inbox, priority queue, SLA management, Customer 360, wiki, automation and quality audits.",
+      },
+      { property: "og:title", content: "Support Operations Center | Software Vala" },
+      {
+        property: "og:description",
+        content:
+          "Tickets, SLA, escalations, Customer 360 and support analytics in the Software Vala support console.",
+      },
+    ],
+  }),
+  component: SupportDashboard,
+});
