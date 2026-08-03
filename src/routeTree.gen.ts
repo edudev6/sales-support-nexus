@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SupportRouteImport } from './routes/support'
+import { Route as SupportAgentRouteImport } from './routes/support-agent'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,31 +23,40 @@ const SupportRoute = SupportRouteImport.update({
   path: '/support',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SupportAgentRoute = SupportAgentRouteImport.update({
+  id: '/support-agent',
+  path: '/support-agent',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/support': typeof SupportRoute
+  '/support-agent': typeof SupportAgentRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/support': typeof SupportRoute
+  '/support-agent': typeof SupportAgentRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/support': typeof SupportRoute
+  '/support-agent': typeof SupportAgentRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/support'
+  fullPaths: '/' | '/support' | '/support-agent'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/support'
-  id: '__root__' | '/' | '/support'
+  to: '/' | '/support' | '/support-agent'
+  id: '__root__' | '/' | '/support' | '/support-agent'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SupportRoute: typeof SupportRoute
+  SupportAgentRoute: typeof SupportAgentRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -65,12 +75,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SupportRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/support-agent': {
+      id: '/support-agent'
+      path: '/support-agent'
+      fullPath: '/support-agent'
+      preLoaderRoute: typeof SupportAgentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SupportRoute: SupportRoute,
+  SupportAgentRoute: SupportAgentRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
