@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { motion } from "framer-motion";
 import { Mail, MailOpen, Reply, UserPlus, Ticket, ArrowUp, Clock, Bot, Tag } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,67 +5,52 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-interface EmailRecord {
-  id: string;
-  from: string;
-  fromEmail: string;
-  subject: string;
-  preview: string;
-  status: "unread" | "read" | "replied" | "escalated";
-  priority: "low" | "medium" | "high" | "urgent";
-  assignedTo: string | null;
-  slaTime: number;
-  tags: string[];
-  aiSuggestion: string;
-  receivedAt: string;
-}
+import { useEmailQueue, useTeamMembers, useUpdateRow, relativeTime, memberName } from "@/hooks/useSalesSupportData";
 
 const EmailQueueModule = () => {
-  const [emails, setEmails] = useState<EmailRecord[]>([
-    { id: "EM-001", from: "Tech Solutions Ltd", fromEmail: "john@techsol.com", subject: "Urgent: Invoice Query", preview: "Hi, I noticed a discrepancy in our latest invoice...", status: "unread", priority: "urgent", assignedTo: null, slaTime: 30, tags: ["billing", "urgent"], aiSuggestion: "Forward to billing team with invoice #12345 attached", receivedAt: "5 min ago" },
-    { id: "EM-002", from: "Healthcare Plus", fromEmail: "maria@hcplus.com", subject: "Feature Request - Reporting", preview: "We would like to request additional reporting features...", status: "read", priority: "medium", assignedTo: "Lisa Park", slaTime: 120, tags: ["feature", "feedback"], aiSuggestion: "Standard feature request template - acknowledge and log", receivedAt: "30 min ago" },
-    { id: "EM-003", from: "Retail Mart", fromEmail: "lisa@retailmart.com", subject: "RE: Support Ticket #TKT-089", preview: "Thank you for your quick response. However...", status: "replied", priority: "high", assignedTo: "Mike Johnson", slaTime: 45, tags: ["support", "follow-up"], aiSuggestion: "Customer requires additional clarification - schedule call", receivedAt: "1 hour ago" },
-    { id: "EM-004", from: "EduLearn Academy", fromEmail: "robert@edulearn.com", subject: "Partnership Inquiry", preview: "We are interested in exploring partnership opportunities...", status: "read", priority: "low", assignedTo: null, slaTime: 240, tags: ["sales", "partnership"], aiSuggestion: "Forward to sales team for partnership evaluation", receivedAt: "2 hours ago" },
-    { id: "EM-005", from: "Global Logistics", fromEmail: "james@globallog.com", subject: "COMPLAINT: Service Downtime", preview: "This is unacceptable! Your service was down for 3 hours...", status: "escalated", priority: "urgent", assignedTo: "Emma Davis", slaTime: 15, tags: ["complaint", "urgent", "escalated"], aiSuggestion: "High priority - immediate manager intervention required", receivedAt: "15 min ago" },
-  ]);
+  const { data: emailData, isLoading } = useEmailQueue();
+  const { data: members } = useTeamMembers();
+  const updateEmail = useUpdateRow("email_queue");
 
-  const agents = ["Sarah Chen", "Mike Johnson", "Lisa Park", "Emma Davis", "James Wilson"];
+  const emails = emailData ?? [];
+  const agents = members ?? [];
 
-  const handleAssign = (emailId: string, agent: string) => {
+  const handleAssign = async (emailId: string, agentId: string) => {
     toast.loading("Assigning email...", { id: `assign-${emailId}` });
-    setTimeout(() => {
-      setEmails(emails.map(e => e.id === emailId ? { ...e, assignedTo: agent, status: "read" } : e));
-      toast.success(`Assigned to ${agent}`, { id: `assign-${emailId}` });
-    }, 500);
+    try {
+      await updateEmail.mutateAsync({ id: emailId, values: { assigned_to: agentId, status: "read" } });
+      toast.success(`Assigned to ${memberName(agents, agentId) ?? "agent"}`, { id: `assign-${emailId}` });
+    } catch {
+      toast.error("Failed to assign", { id: `assign-${emailId}` });
+    }
   };
 
-  const handleReply = (emailId: string) => {
-    toast.loading("Opening reply composer...", { id: `reply-${emailId}` });
-    setTimeout(() => {
-      setEmails(emails.map(e => e.id === emailId ? { ...e, status: "replied" } : e));
+  const handleReply = async (emailId: string) => {
+    toast.loading("Marking replied...", { id: `reply-${emailId}` });
+    try {
+      await updateEmail.mutateAsync({ id: emailId, values: { status: "replied" } });
       toast.success("Reply sent", { id: `reply-${emailId}` });
-    }, 800);
+    } catch {
+      toast.error("Failed to reply", { id: `reply-${emailId}` });
+    }
   };
 
   const handleConvertToTicket = (emailId: string) => {
-    toast.loading("Creating ticket from email...", { id: `ticket-${emailId}` });
-    setTimeout(() => {
-      toast.success("Ticket created", { id: `ticket-${emailId}`, description: "TKT-NEW added to queue" });
-    }, 600);
+    toast.info("Convert to ticket", { description: "Open the Tickets module to create a ticket from this email." });
   };
 
-  const handleEscalate = (emailId: string) => {
+  const handleEscalate = async (emailId: string) => {
     toast.loading("Escalating email...", { id: `escalate-${emailId}` });
-    setTimeout(() => {
-      setEmails(emails.map(e => e.id === emailId ? { ...e, status: "escalated", priority: "urgent" } : e));
+    try {
+      await updateEmail.mutateAsync({ id: emailId, values: { status: "escalated", priority: "urgent" } });
       toast.warning("Email escalated", { id: `escalate-${emailId}` });
-    }, 600);
+    } catch {
+      toast.error("Failed to escalate", { id: `escalate-${emailId}` });
+    }
   };
 
   const handleUseAISuggestion = (emailId: string) => {
-    const email = emails.find(e => e.id === emailId);
-    toast.info("Applying AI suggestion", { description: email?.aiSuggestion });
+    toast.info("AI suggestion", { description: "No AI suggestion available for this email yet." });
   };
 
   const getPriorityColor = (priority: string) => {
@@ -84,7 +68,7 @@ const EmailQueueModule = () => {
 
   const unreadCount = emails.filter(e => e.status === "unread").length;
   const urgentCount = emails.filter(e => e.priority === "urgent" && e.status !== "replied").length;
-  const slaRisk = emails.filter(e => e.slaTime < 60 && e.status !== "replied").length;
+  const slaRisk = emails.filter(e => e.status !== "replied" && (Date.now() - new Date(e.received_at).getTime()) / 60000 > 60).length;
 
   return (
     <div className="space-y-6">
@@ -134,8 +118,11 @@ const EmailQueueModule = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
+            {isLoading && <p className="text-slate-400 text-sm">Loading emails…</p>}
+            {!isLoading && emails.length === 0 && <p className="text-slate-400 text-sm">No emails in queue.</p>}
             {emails.map((email, index) => {
               const StatusIcon = getStatusIcon(email.status);
+              const assignedName = memberName(agents, email.assigned_to);
               return (
                 <motion.div
                   key={email.id}
@@ -147,47 +134,40 @@ const EmailQueueModule = () => {
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-3">
                       <StatusIcon className={`w-5 h-5 ${email.status === "unread" ? "text-cyan-400" : "text-slate-500"}`} />
-                      <span className="font-mono text-cyan-400 text-sm">{email.id}</span>
+                      <span className="font-mono text-cyan-400 text-sm">{email.id.slice(0, 8)}</span>
                       <Badge className={getPriorityColor(email.priority)}>{email.priority}</Badge>
-                      {email.tags.map(tag => (
-                        <Badge key={tag} variant="outline" className="text-slate-400 text-xs">{tag}</Badge>
-                      ))}
+                      {email.category && (
+                        <Badge variant="outline" className="text-slate-400 text-xs">{email.category}</Badge>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 text-sm">
-                      {email.status !== "replied" && (
-                        <>
-                          <Clock className={`w-4 h-4 ${email.slaTime < 60 ? "text-red-400" : "text-amber-400"}`} />
-                          <span className={email.slaTime < 60 ? "text-red-300" : "text-amber-300"}>{email.slaTime} min</span>
-                        </>
-                      )}
-                      <span className="text-slate-500">{email.receivedAt}</span>
+                      <span className="text-slate-500">{relativeTime(email.received_at)}</span>
                     </div>
                   </div>
 
                   <div className="mb-2">
                     <h4 className="font-medium text-slate-100">{email.subject}</h4>
-                    <p className="text-sm text-slate-400">{email.from} &lt;{email.fromEmail}&gt; {email.assignedTo && `• Assigned: ${email.assignedTo}`}</p>
-                    <p className="text-sm text-slate-500 truncate">{email.preview}</p>
+                    <p className="text-sm text-slate-400">{email.from_name ?? email.from_email} &lt;{email.from_email}&gt; {assignedName && `• Assigned: ${assignedName}`}</p>
+                    {email.preview && <p className="text-sm text-slate-500 truncate">{email.preview}</p>}
                   </div>
 
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 text-sm">
                       <Bot className="w-4 h-4 text-purple-400" />
-                      <span className="text-purple-300/80 italic">{email.aiSuggestion}</span>
                       <Button size="sm" variant="ghost" onClick={() => handleUseAISuggestion(email.id)} className="text-purple-400 text-xs">
-                        Apply
+                        AI Suggest
                       </Button>
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {!email.assignedTo && (
+                      {!email.assigned_to && (
                         <Select onValueChange={(agent) => handleAssign(email.id, agent)}>
                           <SelectTrigger className="w-32 bg-slate-700/50 border-slate-600">
                             <SelectValue placeholder="Assign" />
                           </SelectTrigger>
                           <SelectContent>
                             {agents.map(agent => (
-                              <SelectItem key={agent} value={agent}>{agent}</SelectItem>
+                              <SelectItem key={agent.id} value={agent.id}>{agent.full_name}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
