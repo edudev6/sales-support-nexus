@@ -1,61 +1,53 @@
-import { useState } from "react";
 import { motion } from "framer-motion";
-import { Inbox, UserPlus, ArrowRight, Flame, Sun, Snowflake, Target, DollarSign, TrendingUp } from "lucide-react";
+import { Inbox, ArrowRight, Flame, Sun, Snowflake, DollarSign, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useLeads, useTeamMembers, useUpdateRow, relativeTime, memberName, type SalesLead } from "@/hooks/useSalesSupportData";
 
 type LeadStage = "new" | "contacted" | "qualified" | "proposal" | "won" | "lost";
 
-interface SalesLead {
-  id: string;
-  company: string;
-  contact: string;
-  email: string;
-  value: number;
-  urgency: "hot" | "warm" | "cold";
-  stage: LeadStage;
-  assignedTo: string | null;
-  aiWinProbability: number;
-  source: string;
-  createdAt: string;
-}
-
 const SalesLeadsModule = () => {
-  const [leads, setLeads] = useState<SalesLead[]>([
-    { id: "LD-001", company: "Tech Solutions Ltd", contact: "John Davidson", email: "john@techsol.com", value: 25000, urgency: "hot", stage: "proposal", assignedTo: "Alex Thompson", aiWinProbability: 78, source: "Website", createdAt: "2 days ago" },
-    { id: "LD-002", company: "Healthcare Plus", contact: "Maria Santos", email: "maria@hcplus.com", value: 45000, urgency: "hot", stage: "qualified", assignedTo: "Maria Garcia", aiWinProbability: 85, source: "Referral", createdAt: "3 days ago" },
-    { id: "LD-003", company: "Retail Mart", contact: "Lisa Patterson", email: "lisa@retailmart.com", value: 12000, urgency: "warm", stage: "contacted", assignedTo: "David Lee", aiWinProbability: 45, source: "SEO", createdAt: "5 days ago" },
-    { id: "LD-004", company: "EduLearn Academy", contact: "Robert Kim", email: "robert@edulearn.com", value: 35000, urgency: "warm", stage: "new", assignedTo: null, aiWinProbability: 32, source: "Demo Request", createdAt: "1 day ago" },
-    { id: "LD-005", company: "Global Logistics", contact: "James Turner", email: "james@globallog.com", value: 80000, urgency: "cold", stage: "new", assignedTo: null, aiWinProbability: 22, source: "Cold Email", createdAt: "Today" },
-  ]);
+  const { data: leadsData, isLoading } = useLeads();
+  const { data: reps } = useTeamMembers("sales");
+  const updateLead = useUpdateRow("sales_leads");
+  const leads: SalesLead[] = leadsData ?? [];
+  const salesReps = reps ?? [];
 
-  const salesReps = ["Alex Thompson", "Maria Garcia", "David Lee", "Sarah Miller", "John Brown"];
-
-  const handleAssignRep = (leadId: string, rep: string) => {
+  const handleAssignRep = async (leadId: string, repId: string) => {
+    const lead = leads.find((l) => l.id === leadId);
     toast.loading("Assigning rep...", { id: `assign-${leadId}` });
-    setTimeout(() => {
-      setLeads(leads.map(l => l.id === leadId ? { ...l, assignedTo: rep, stage: l.stage === "new" ? "contacted" : l.stage } : l));
-      toast.success(`Assigned to ${rep}`, { id: `assign-${leadId}` });
-    }, 500);
+    try {
+      await updateLead.mutateAsync({
+        id: leadId,
+        values: { assigned_to: repId, stage: lead?.stage === "new" ? "contacted" : lead?.stage },
+      });
+      toast.success(`Assigned to ${memberName(salesReps, repId) ?? "rep"}`, { id: `assign-${leadId}` });
+    } catch (e) {
+      toast.error("Failed to assign rep", { id: `assign-${leadId}` });
+    }
   };
 
-  const handleChangeStage = (leadId: string, newStage: LeadStage) => {
+  const handleChangeStage = async (leadId: string, newStage: LeadStage) => {
     toast.loading("Updating stage...", { id: `stage-${leadId}` });
-    setTimeout(() => {
-      setLeads(leads.map(l => l.id === leadId ? { ...l, stage: newStage } : l));
+    try {
+      await updateLead.mutateAsync({ id: leadId, values: { stage: newStage } });
       toast.success(`Stage updated to ${newStage}`, { id: `stage-${leadId}` });
-    }, 500);
+    } catch (e) {
+      toast.error("Failed to update stage", { id: `stage-${leadId}` });
+    }
   };
 
-  const handleConvertToCustomer = (leadId: string) => {
+  const handleConvertToCustomer = async (leadId: string) => {
     toast.loading("Converting to customer...", { id: `convert-${leadId}` });
-    setTimeout(() => {
-      setLeads(leads.map(l => l.id === leadId ? { ...l, stage: "won" } : l));
+    try {
+      await updateLead.mutateAsync({ id: leadId, values: { stage: "won" } });
       toast.success("Lead converted to customer!", { id: `convert-${leadId}` });
-    }, 800);
+    } catch (e) {
+      toast.error("Failed to convert lead", { id: `convert-${leadId}` });
+    }
   };
 
   const getUrgencyBadge = (urgency: string) => {
@@ -66,7 +58,7 @@ const SalesLeadsModule = () => {
     }
   };
 
-  const getStageColor = (stage: LeadStage) => {
+  const getStageColor = (stage: string) => {
     switch (stage) {
       case "new": return "bg-purple-500/20 text-purple-300";
       case "contacted": return "bg-blue-500/20 text-blue-300";
@@ -78,9 +70,12 @@ const SalesLeadsModule = () => {
     }
   };
 
-  const totalPipeline = leads.filter(l => !["won", "lost"].includes(l.stage)).reduce((sum, l) => sum + l.value, 0);
-  const hotLeads = leads.filter(l => l.urgency === "hot" && !["won", "lost"].includes(l.stage)).length;
-  const avgWinProb = Math.round(leads.filter(l => !["won", "lost"].includes(l.stage)).reduce((sum, l) => sum + l.aiWinProbability, 0) / leads.filter(l => !["won", "lost"].includes(l.stage)).length);
+  const activeLeads = leads.filter((l) => !["won", "lost"].includes(l.stage));
+  const totalPipeline = activeLeads.reduce((sum, l) => sum + Number(l.value ?? 0), 0);
+  const hotLeads = activeLeads.filter((l) => l.urgency === "hot").length;
+  const avgWinProb = activeLeads.length > 0
+    ? Math.round(activeLeads.reduce((sum, l) => sum + Number(l.ai_win_probability ?? 0), 0) / activeLeads.length)
+    : 0;
 
   return (
     <div className="space-y-6">
@@ -91,12 +86,11 @@ const SalesLeadsModule = () => {
         </div>
       </div>
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="bg-slate-900/50 border-cyan-500/20">
           <CardContent className="p-4 text-center">
             <Inbox className="w-8 h-8 text-cyan-400 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-cyan-100">{leads.filter(l => !["won", "lost"].includes(l.stage)).length}</div>
+            <div className="text-2xl font-bold text-cyan-100">{activeLeads.length}</div>
             <div className="text-xs text-slate-400">Active Leads</div>
           </CardContent>
         </Card>
@@ -123,88 +117,94 @@ const SalesLeadsModule = () => {
         </Card>
       </div>
 
-      {/* Leads List */}
       <Card className="bg-slate-900/50 border-cyan-500/20">
         <CardHeader>
           <CardTitle className="text-cyan-100">Lead Pipeline</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            {leads.map((lead, index) => {
-              const urgency = getUrgencyBadge(lead.urgency);
-              const UrgencyIcon = urgency.icon;
-              return (
-                <motion.div
-                  key={lead.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                  className="p-4 bg-slate-800/50 rounded-lg hover:bg-slate-800 transition-colors"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <span className="font-mono text-cyan-400 text-sm">{lead.id}</span>
-                      <Badge className={urgency.color}>
-                        <UrgencyIcon className="w-3 h-3 mr-1" />
-                        {urgency.label}
-                      </Badge>
-                      <Badge className={getStageColor(lead.stage)}>{lead.stage}</Badge>
-                      <Badge variant="outline" className="text-emerald-400 border-emerald-500/30">
-                        AI: {lead.aiWinProbability}% win
-                      </Badge>
+          {isLoading ? (
+            <div className="text-slate-400 text-sm py-6 text-center">Loading leads…</div>
+          ) : leads.length === 0 ? (
+            <div className="text-slate-400 text-sm py-6 text-center">No leads yet.</div>
+          ) : (
+            <div className="space-y-3">
+              {leads.map((lead, index) => {
+                const urgency = getUrgencyBadge(lead.urgency);
+                const UrgencyIcon = urgency.icon;
+                const assignedName = memberName(salesReps, lead.assigned_to);
+                return (
+                  <motion.div
+                    key={lead.id}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                    className="p-4 bg-slate-800/50 rounded-lg hover:bg-slate-800 transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono text-cyan-400 text-sm">{lead.reference}</span>
+                        <Badge className={urgency.color}>
+                          <UrgencyIcon className="w-3 h-3 mr-1" />
+                          {urgency.label}
+                        </Badge>
+                        <Badge className={getStageColor(lead.stage)}>{lead.stage}</Badge>
+                        <Badge variant="outline" className="text-emerald-400 border-emerald-500/30">
+                          AI: {lead.ai_win_probability}% win
+                        </Badge>
+                      </div>
+                      <div className="text-lg font-bold text-emerald-300">${Number(lead.value).toLocaleString()}</div>
                     </div>
-                    <div className="text-lg font-bold text-emerald-300">${lead.value.toLocaleString()}</div>
-                  </div>
 
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-medium text-slate-100">{lead.company}</h4>
-                      <p className="text-sm text-slate-400">{lead.contact} • {lead.email} • {lead.source} • {lead.createdAt}</p>
-                      {lead.assignedTo && <p className="text-sm text-cyan-400">Assigned: {lead.assignedTo}</p>}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-medium text-slate-100">{lead.company}</h4>
+                        <p className="text-sm text-slate-400">{lead.contact_name} • {lead.email ?? "—"} • {lead.source} • {relativeTime(lead.created_at)}</p>
+                        {assignedName && <p className="text-sm text-cyan-400">Assigned: {assignedName}</p>}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {!lead.assigned_to && (
+                          <Select onValueChange={(rep) => handleAssignRep(lead.id, rep)}>
+                            <SelectTrigger className="w-36 bg-slate-700/50 border-slate-600">
+                              <SelectValue placeholder="Assign rep..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {salesReps.map((rep) => (
+                                <SelectItem key={rep.id} value={rep.id}>{rep.full_name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+
+                        {!["won", "lost"].includes(lead.stage) && (
+                          <Select value={lead.stage} onValueChange={(stage) => handleChangeStage(lead.id, stage as LeadStage)}>
+                            <SelectTrigger className="w-32 bg-slate-700/50 border-slate-600">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="new">New</SelectItem>
+                              <SelectItem value="contacted">Contacted</SelectItem>
+                              <SelectItem value="qualified">Qualified</SelectItem>
+                              <SelectItem value="proposal">Proposal</SelectItem>
+                              <SelectItem value="won">Won</SelectItem>
+                              <SelectItem value="lost">Lost</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+
+                        {lead.stage === "proposal" && (
+                          <Button size="sm" onClick={() => handleConvertToCustomer(lead.id)} className="bg-emerald-500 hover:bg-emerald-600">
+                            <ArrowRight className="w-3 h-3 mr-1" />
+                            Convert
+                          </Button>
+                        )}
+                      </div>
                     </div>
-
-                    <div className="flex items-center gap-2">
-                      {!lead.assignedTo && (
-                        <Select onValueChange={(rep) => handleAssignRep(lead.id, rep)}>
-                          <SelectTrigger className="w-36 bg-slate-700/50 border-slate-600">
-                            <SelectValue placeholder="Assign rep..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {salesReps.map(rep => (
-                              <SelectItem key={rep} value={rep}>{rep}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-
-                      {!["won", "lost"].includes(lead.stage) && (
-                        <Select value={lead.stage} onValueChange={(stage) => handleChangeStage(lead.id, stage as LeadStage)}>
-                          <SelectTrigger className="w-32 bg-slate-700/50 border-slate-600">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="new">New</SelectItem>
-                            <SelectItem value="contacted">Contacted</SelectItem>
-                            <SelectItem value="qualified">Qualified</SelectItem>
-                            <SelectItem value="proposal">Proposal</SelectItem>
-                            <SelectItem value="won">Won</SelectItem>
-                            <SelectItem value="lost">Lost</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      )}
-
-                      {lead.stage === "proposal" && (
-                        <Button size="sm" onClick={() => handleConvertToCustomer(lead.id)} className="bg-emerald-500 hover:bg-emerald-600">
-                          <ArrowRight className="w-3 h-3 mr-1" />
-                          Convert
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
