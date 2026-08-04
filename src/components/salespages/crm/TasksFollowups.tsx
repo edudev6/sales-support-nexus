@@ -378,6 +378,7 @@ const TasksFollowups = () => {
                     <Button
                       variant="ghost"
                       size="icon"
+                      className="text-slate-400 hover:text-red-500"
                       onClick={async () => {
                         try {
                           await deleteTask.mutateAsync(task.id);
@@ -387,7 +388,7 @@ const TasksFollowups = () => {
                         }
                       }}
                     >
-                      <AlertCircle className="w-4 h-4 opacity-0" />
+                      <Circle className="w-4 h-4" />
                     </Button>
                   </motion.div>
                 );
