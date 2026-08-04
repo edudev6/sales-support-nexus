@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,103 +12,46 @@ import {
   Shield
 } from 'lucide-react';
 import { toast } from 'sonner';
-
-type AlertType = 'sla_warning' | 'sla_breach' | 'no_response' | 'escalation_pending';
-
-interface SLAAlert {
-  id: string;
-  type: AlertType;
-  entityType: 'lead' | 'ticket';
-  entityId: string;
-  entityName: string;
-  owner: string;
-  severity: 'critical' | 'high' | 'medium';
-  timeRemaining?: number;
-  message: string;
-  createdAt: string;
-  autoEscalateAt?: string;
-}
-
-const mockAlerts: SLAAlert[] = [
-  {
-    id: '1',
-    type: 'sla_breach',
-    entityType: 'ticket',
-    entityId: 'TKT-2024-8901',
-    entityName: 'Payment gateway integration failing',
-    owner: 'VL-SA-001',
-    severity: 'critical',
-    message: 'SLA breached - Critical ticket unresolved for 4+ hours',
-    createdAt: '2024-01-15T10:05:00Z',
-    autoEscalateAt: '2024-01-15T10:30:00Z'
-  },
-  {
-    id: '2',
-    type: 'sla_warning',
-    entityType: 'lead',
-    entityId: 'LD-2024-4521',
-    entityName: 'Rajesh Kumar - Initial Contact',
-    owner: 'VL-SE-002',
-    severity: 'high',
-    timeRemaining: 45,
-    message: 'SLA at risk - 45 minutes remaining for initial contact',
-    createdAt: '2024-01-15T09:45:00Z'
-  },
-  {
-    id: '3',
-    type: 'no_response',
-    entityType: 'ticket',
-    entityId: 'TKT-2024-8905',
-    entityName: 'API rate limit questions',
-    owner: 'VL-SA-002',
-    severity: 'medium',
-    message: 'No response in 2 hours - Customer waiting',
-    createdAt: '2024-01-15T08:00:00Z'
-  },
-  {
-    id: '4',
-    type: 'escalation_pending',
-    entityType: 'lead',
-    entityId: 'LD-2024-4515',
-    entityName: 'Enterprise deal - Metro Industries',
-    owner: 'VL-SE-001',
-    severity: 'high',
-    message: 'Lead stuck in Qualified stage for 7 days',
-    createdAt: '2024-01-15T07:00:00Z'
-  }
-];
+import { useTickets, useUpdateRow, relativeTime } from '@/hooks/useSalesSupportData';
 
 export const SSMSLAAlerts: React.FC = () => {
-  const [alerts, setAlerts] = useState<SLAAlert[]>(mockAlerts);
-  const [now, setNow] = useState(new Date());
-
-  useEffect(() => {
-    const interval = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(interval);
-  }, []);
+  const { data: tickets, isLoading } = useTickets();
+  const updateTicket = useUpdateRow('support_tickets');
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
   const handleAcknowledge = (id: string) => {
-    setAlerts(prev => prev.filter(a => a.id !== id));
+    setDismissed(prev => new Set(prev).add(id));
     toast.success('Alert acknowledged and logged');
   };
 
-  const handleEscalate = (id: string) => {
-    setAlerts(prev => prev.filter(a => a.id !== id));
-    toast.success('Escalated to Pro Manager');
+  const handleEscalate = async (id: string) => {
+    try {
+      await updateTicket.mutateAsync({ id, values: { status: 'escalated' } });
+      setDismissed(prev => new Set(prev).add(id));
+      toast.success('Escalated to Pro Manager');
+    } catch {
+      toast.error('Failed to escalate');
+    }
   };
 
-  const getAlertIcon = (type: AlertType) => {
+  const activeTickets = (tickets ?? []).filter(t => t.status !== 'resolved' && !dismissed.has(t.id));
+
+  const alerts = activeTickets
+    .filter(t => t.sla_breached || t.sla_minutes_remaining < 240)
+    .map(t => {
+      const severity = t.sla_breached ? 'critical' : t.sla_minutes_remaining < 60 ? 'high' : 'medium';
+      const type = t.sla_breached ? 'sla_breach' : t.sla_minutes_remaining < 60 ? 'sla_warning' : 'no_response';
+      return { ticket: t, severity, type };
+    });
+
+  const getAlertIcon = (type: string) => {
     switch (type) {
       case 'sla_breach':
         return <AlertTriangle className="h-4 w-4 text-red-500" />;
       case 'sla_warning':
         return <Timer className="h-4 w-4 text-yellow-500" />;
-      case 'no_response':
-        return <Clock className="h-4 w-4 text-orange-500" />;
-      case 'escalation_pending':
-        return <ArrowUpRight className="h-4 w-4 text-purple-500" />;
       default:
-        return <Bell className="h-4 w-4" />;
+        return <Clock className="h-4 w-4 text-orange-500" />;
     }
   };
 
@@ -118,10 +61,8 @@ export const SSMSLAAlerts: React.FC = () => {
         return 'border-red-500 bg-red-500/5';
       case 'high':
         return 'border-orange-500 bg-orange-500/5';
-      case 'medium':
-        return 'border-yellow-500 bg-yellow-500/5';
       default:
-        return 'border-border bg-background';
+        return 'border-yellow-500 bg-yellow-500/5';
     }
   };
 
@@ -154,62 +95,67 @@ export const SSMSLAAlerts: React.FC = () => {
         </p>
       </CardHeader>
       <CardContent className="p-4">
+        {isLoading ? (
+          <div className="text-center py-8 text-muted-foreground">Loading alerts...</div>
+        ) : (
         <div className="space-y-3">
-          {alerts.map((alert) => (
+          {alerts.map(({ ticket, severity, type }) => (
             <motion.div
-              key={alert.id}
+              key={ticket.id}
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
-              className={`border-l-4 rounded-lg p-4 ${getSeverityColor(alert.severity)}`}
+              className={`border-l-4 rounded-lg p-4 ${getSeverityColor(severity)}`}
             >
               <div className="flex items-start justify-between mb-2">
                 <div className="flex items-start gap-3">
                   <div className="p-2 bg-background rounded-lg">
-                    {getAlertIcon(alert.type)}
+                    {getAlertIcon(type)}
                   </div>
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <Badge className={
-                        alert.severity === 'critical' ? 'bg-red-500 text-white' :
-                        alert.severity === 'high' ? 'bg-orange-500/10 text-orange-500' :
+                        severity === 'critical' ? 'bg-red-500 text-white' :
+                        severity === 'high' ? 'bg-orange-500/10 text-orange-500' :
                         'bg-yellow-500/10 text-yellow-500'
                       }>
-                        {alert.severity.toUpperCase()}
+                        {severity.toUpperCase()}
                       </Badge>
-                      <span className="font-mono text-sm text-primary">{alert.entityId}</span>
+                      <span className="font-mono text-sm text-primary">{ticket.reference}</span>
                       <Badge variant="outline" className="text-xs">
-                        {alert.entityType}
+                        ticket
                       </Badge>
                     </div>
-                    <h4 className="font-medium text-foreground">{alert.entityName}</h4>
-                    <p className="text-sm text-muted-foreground">{alert.message}</p>
+                    <h4 className="font-medium text-foreground">{ticket.subject}</h4>
+                    <p className="text-sm text-muted-foreground">
+                      {ticket.sla_breached ? 'SLA breached - unresolved ticket' : 'No response - customer waiting'}
+                    </p>
                   </div>
                 </div>
-                {alert.timeRemaining && (
+                {!ticket.sla_breached && (
                   <Badge className="bg-yellow-500/10 text-yellow-500 font-mono">
                     <Timer className="h-3 w-3 mr-1" />
-                    {alert.timeRemaining}m left
+                    {ticket.sla_minutes_remaining}m left
                   </Badge>
                 )}
               </div>
 
               <div className="flex items-center justify-between mt-3">
                 <span className="text-xs text-muted-foreground">
-                  Owner: {alert.owner} • Triggered: {new Date(alert.createdAt).toLocaleTimeString()}
+                  Owner: {ticket.assigned_to ?? 'Unassigned'} • Triggered: {relativeTime(ticket.updated_at)}
                 </span>
                 <div className="flex gap-2">
                   <Button 
                     size="sm" 
                     variant="outline"
-                    onClick={() => handleAcknowledge(alert.id)}
+                    onClick={() => handleAcknowledge(ticket.id)}
                   >
                     Acknowledge
                   </Button>
-                  {alert.severity === 'critical' && (
+                  {severity === 'critical' && (
                     <Button 
                       size="sm" 
                       variant="destructive"
-                      onClick={() => handleEscalate(alert.id)}
+                      onClick={() => handleEscalate(ticket.id)}
                     >
                       <ArrowUpRight className="h-4 w-4 mr-1" />
                       Escalate
@@ -217,18 +163,12 @@ export const SSMSLAAlerts: React.FC = () => {
                   )}
                 </div>
               </div>
-
-              {alert.autoEscalateAt && (
-                <div className="mt-2 p-2 bg-red-500/10 rounded text-xs text-red-500">
-                  <Shield className="h-3 w-3 inline mr-1" />
-                  Auto-escalation scheduled at {new Date(alert.autoEscalateAt).toLocaleTimeString()}
-                </div>
-              )}
             </motion.div>
           ))}
         </div>
+        )}
 
-        {alerts.length === 0 && (
+        {!isLoading && alerts.length === 0 && (
           <div className="text-center py-8 text-muted-foreground">
             <Bell className="h-12 w-12 mx-auto mb-2 opacity-30" />
             <p>No active SLA alerts</p>

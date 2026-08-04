@@ -61,11 +61,6 @@ const TicketInbox = () => {
     }
   };
 
-  const handleUseCanned = async (responseId: string, usageCount: number) => {
-    const bump = useUpdateRow('canned_responses');
-    // Fire and forget usage bump handled inline below via closure workaround not possible; skip if hook misuse.
-  };
-
   return (
     <div className="space-y-6">
       {/* Header */}
