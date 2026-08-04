@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { MessageCircle, Shield, Globe, Send, User, Clock, FileText, Sparkles } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,31 +6,80 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  useEmailQueue,
+  useCallLogs,
+  useChatSessions,
+  useChatMessages,
+  useCannedResponses,
+  relativeTime,
+} from "@/hooks/useSalesSupportData";
+
+type UnifiedConversation = {
+  id: string;
+  source: "chat" | "email" | "call";
+  client: string;
+  company: string;
+  lastMessage: string;
+  time: string;
+  timestamp: number;
+  unread: number;
+  status: string;
+};
 
 const CommunicationHub = () => {
   const [message, setMessage] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const conversations = [
-    { id: 1, client: "Client #A7X", company: "Tech Solutions", lastMessage: "Thanks for the demo!", time: "5 min ago", unread: 2, status: "active" },
-    { id: 2, client: "Client #B3Y", company: "Healthcare Plus", lastMessage: "When can we schedule...", time: "1 hour ago", unread: 0, status: "active" },
-    { id: 3, client: "Client #C9Z", company: "EduLearn Academy", lastMessage: "I have a question about pricing", time: "3 hours ago", unread: 1, status: "waiting" },
-  ];
+  const { data: emails = [] } = useEmailQueue();
+  const { data: calls = [] } = useCallLogs();
+  const { data: chats = [] } = useChatSessions();
+  const { data: cannedResponses = [] } = useCannedResponses();
 
-  const chatMessages = [
-    { id: 1, sender: "Client #A7X", content: "Hi, I watched the demo you sent. Very impressive!", time: "10:30 AM", isClient: true },
-    { id: 2, sender: "You", content: "Thank you! I'm glad you found it helpful. Did you have any questions about the features?", time: "10:32 AM", isClient: false },
-    { id: 3, sender: "Client #A7X", content: "Yes, I'm wondering about the integration capabilities with our existing CRM.", time: "10:35 AM", isClient: true },
-    { id: 4, sender: "You", content: "Great question! Our system supports seamless integration with most major CRMs including Salesforce, HubSpot, and custom APIs.", time: "10:38 AM", isClient: false },
-    { id: 5, sender: "System", content: "Auto-translated from Spanish", time: "10:40 AM", isSystem: true },
-    { id: 6, sender: "Client #A7X", content: "Thanks for the demo!", time: "10:42 AM", isClient: true },
-  ];
+  const conversations: UnifiedConversation[] = useMemo(() => {
+    const chatItems: UnifiedConversation[] = chats.map((c) => ({
+      id: c.id,
+      source: "chat",
+      client: c.visitor_name,
+      company: c.channel,
+      lastMessage: c.sentiment ? `Sentiment: ${c.sentiment}` : "Active chat",
+      time: relativeTime(c.started_at),
+      timestamp: new Date(c.started_at).getTime(),
+      unread: c.unread_count ?? 0,
+      status: c.status,
+    }));
+    const emailItems: UnifiedConversation[] = emails.map((e) => ({
+      id: e.id,
+      source: "email",
+      client: e.from_name || e.from_email,
+      company: e.category,
+      lastMessage: e.preview || e.subject,
+      time: relativeTime(e.received_at),
+      timestamp: new Date(e.received_at).getTime(),
+      unread: e.status === "unread" ? 1 : 0,
+      status: e.status,
+    }));
+    const callItems: UnifiedConversation[] = calls.map((c) => ({
+      id: c.id,
+      source: "call",
+      client: c.caller_name,
+      company: c.direction,
+      lastMessage: c.notes || `${c.direction} call`,
+      time: relativeTime(c.started_at),
+      timestamp: new Date(c.started_at).getTime(),
+      unread: 0,
+      status: c.status,
+    }));
+    return [...chatItems, ...emailItems, ...callItems].sort((a, b) => b.timestamp - a.timestamp);
+  }, [chats, emails, calls]);
 
-  const cannedReplies = [
-    "Thank you for your interest! Let me provide more details...",
-    "I'd be happy to schedule a follow-up call to discuss further.",
-    "Our pricing starts at $X/month. Would you like a custom quote?",
-    "I'll send you the documentation right away.",
-  ];
+  const activeId = selectedId ?? conversations[0]?.id ?? null;
+  const active = conversations.find((c) => c.id === activeId) ?? null;
+
+  const { data: chatMessages = [] } = useChatMessages(active?.source === "chat" ? active.id : null);
+
+  const positiveChats = chats.filter((c) => c.sentiment === "positive").length;
+  const conversionLikelihood = chats.length > 0 ? Math.round((positiveChats / chats.length) * 100) : 0;
 
   return (
     <div className="space-y-6">
@@ -59,13 +108,17 @@ const CommunicationHub = () => {
           <CardContent className="p-0">
             <ScrollArea className="h-[500px]">
               <div className="p-2 space-y-2">
+                {conversations.length === 0 && (
+                  <p className="text-xs text-slate-500 p-3">No conversations yet.</p>
+                )}
                 {conversations.map((conv) => (
                   <motion.div
                     key={conv.id}
                     whileHover={{ scale: 1.02 }}
+                    onClick={() => setSelectedId(conv.id)}
                     className={`p-3 rounded-lg cursor-pointer transition-colors ${
-                      conv.id === 1 
-                        ? "bg-cyan-500/20 border border-cyan-500/30" 
+                      conv.id === activeId
+                        ? "bg-cyan-500/20 border border-cyan-500/30"
                         : "bg-slate-800/50 hover:bg-slate-800"
                     }`}
                   >
@@ -104,39 +157,47 @@ const CommunicationHub = () => {
                   <User className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <CardTitle className="text-cyan-100">Client #A7X</CardTitle>
-                  <p className="text-xs text-slate-400">Tech Solutions Ltd • Active now</p>
+                  <CardTitle className="text-cyan-100">{active?.client ?? "No conversation selected"}</CardTitle>
+                  <p className="text-xs text-slate-400">{active ? `${active.company} • ${active.status}` : ""}</p>
                 </div>
               </div>
-              <Badge className="bg-slate-700 text-slate-300">
-                <Clock className="w-3 h-3 mr-1" />
-                Session: 45 min
-              </Badge>
+              {active && (
+                <Badge className="bg-slate-700 text-slate-300">
+                  <Clock className="w-3 h-3 mr-1" />
+                  {active.time}
+                </Badge>
+              )}
             </div>
           </CardHeader>
-          
+
           <ScrollArea className="flex-1 p-4 h-[350px]">
             <div className="space-y-4">
-              {chatMessages.map((msg) => (
-                <motion.div
-                  key={msg.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className={`flex ${msg.isClient ? "justify-start" : "justify-end"}`}
-                >
-                  {msg.isSystem ? (
-                    <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg px-3 py-2 text-xs text-blue-300">
-                      <Globe className="w-3 h-3 inline mr-1" />
-                      {msg.content}
-                    </div>
-                  ) : (
-                    <div className={`max-w-[70%] ${msg.isClient ? "bg-slate-800 border-slate-700" : "bg-cyan-500/20 border-cyan-500/30"} border rounded-lg p-3`}>
-                      <p className={`text-sm ${msg.isClient ? "text-slate-200" : "text-cyan-100"}`}>{msg.content}</p>
-                      <span className="text-xs text-slate-500 mt-1 block">{msg.time}</span>
-                    </div>
-                  )}
-                </motion.div>
-              ))}
+              {active?.source === "chat" ? (
+                chatMessages.length === 0 ? (
+                  <p className="text-sm text-slate-500">No messages yet in this session.</p>
+                ) : (
+                  chatMessages.map((msg) => (
+                    <motion.div
+                      key={msg.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`flex ${msg.sender_type === "visitor" ? "justify-start" : "justify-end"}`}
+                    >
+                      <div className={`max-w-[70%] ${msg.sender_type === "visitor" ? "bg-slate-800 border-slate-700" : "bg-cyan-500/20 border-cyan-500/30"} border rounded-lg p-3`}>
+                        <p className={`text-sm ${msg.sender_type === "visitor" ? "text-slate-200" : "text-cyan-100"}`}>{msg.body}</p>
+                        <span className="text-xs text-slate-500 mt-1 block">{relativeTime(msg.created_at)}</span>
+                      </div>
+                    </motion.div>
+                  ))
+                )
+              ) : active ? (
+                <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
+                  <p className="text-sm text-slate-200">{active.lastMessage}</p>
+                  <span className="text-xs text-slate-500 mt-1 block">{active.time}</span>
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">Select a conversation to view details.</p>
+              )}
             </div>
           </ScrollArea>
 
@@ -164,15 +225,18 @@ const CommunicationHub = () => {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {cannedReplies.map((reply, index) => (
+              {cannedResponses.length === 0 && (
+                <p className="text-xs text-slate-500">No canned responses configured.</p>
+              )}
+              {cannedResponses.slice(0, 4).map((reply) => (
                 <Button
-                  key={index}
+                  key={reply.id}
                   variant="ghost"
                   size="sm"
                   className="w-full justify-start text-left text-xs text-slate-400 hover:text-cyan-300 hover:bg-cyan-500/10 h-auto py-2"
-                  onClick={() => setMessage(reply)}
+                  onClick={() => setMessage(reply.body)}
                 >
-                  {reply.substring(0, 40)}...
+                  {reply.body.substring(0, 40)}...
                 </Button>
               ))}
             </CardContent>
@@ -202,9 +266,11 @@ const CommunicationHub = () => {
 
           <Card className="bg-gradient-to-br from-emerald-900/30 to-cyan-900/30 border-emerald-500/30">
             <CardContent className="p-4 text-center">
-              <div className="text-2xl font-bold text-emerald-300">85%</div>
+              <div className="text-2xl font-bold text-emerald-300">{conversionLikelihood}%</div>
               <div className="text-xs text-slate-400">Likely to Convert</div>
-              <div className="text-xs text-emerald-400 mt-1">High Priority Lead</div>
+              <div className="text-xs text-emerald-400 mt-1">
+                {conversionLikelihood >= 60 ? "High Priority Lead" : "Needs Nurturing"}
+              </div>
             </CardContent>
           </Card>
         </div>
