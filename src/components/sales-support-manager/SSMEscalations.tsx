@@ -15,119 +15,62 @@ import {
   FileText
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useEscalations, useTickets, useTeamMembers, useInsertRow, memberName } from '@/hooks/useSalesSupportData';
 
-interface Escalation {
-  id: string;
-  entityType: 'lead' | 'ticket';
-  entityId: string;
-  entityName: string;
-  owner: string;
-  escalatedTo: 'pro_manager' | 'legal' | 'super_admin';
-  reason: string;
-  priority: 'critical' | 'high' | 'medium';
-  escalatedAt: string;
-  status: 'pending' | 'in_progress' | 'resolved';
-  evidence?: string;
-}
-
-const mockEscalations: Escalation[] = [
-  {
-    id: '1',
-    entityType: 'ticket',
-    entityId: 'TKT-2024-8901',
-    entityName: 'Payment gateway integration failing',
-    owner: 'VL-SA-001',
-    escalatedTo: 'pro_manager',
-    reason: 'SLA breached - requires technical expertise',
-    priority: 'critical',
-    escalatedAt: '2024-01-15T10:30:00Z',
-    status: 'in_progress',
-    evidence: 'Error logs attached'
-  },
-  {
-    id: '2',
-    entityType: 'lead',
-    entityId: 'LD-2024-4515',
-    entityName: 'Enterprise deal - Metro Industries',
-    owner: 'VL-SE-001',
-    escalatedTo: 'pro_manager',
-    reason: 'Complex pricing negotiation required',
-    priority: 'high',
-    escalatedAt: '2024-01-15T09:00:00Z',
-    status: 'pending'
-  },
-  {
-    id: '3',
-    entityType: 'ticket',
-    entityId: 'TKT-2024-8890',
-    entityName: 'Formal complaint - service quality',
-    owner: 'VL-SA-002',
-    escalatedTo: 'legal',
-    reason: 'Customer threatening legal action',
-    priority: 'critical',
-    escalatedAt: '2024-01-14T16:00:00Z',
-    status: 'in_progress',
-    evidence: 'Customer correspondence attached'
-  }
-];
+const targetLabels: Record<string, string> = {
+  '1': 'pro_manager',
+  '2': 'legal',
+  '3': 'super_admin',
+};
 
 export const SSMEscalations: React.FC = () => {
-  const [escalations] = useState<Escalation[]>(mockEscalations);
-  const [selectedEscalation, setSelectedEscalation] = useState<string | null>(null);
+  const { data: escalations, isLoading } = useEscalations();
+  const { data: tickets } = useTickets();
+  const { data: members } = useTeamMembers();
+  const insertEscalation = useInsertRow('support_escalations');
   const [escalationEvidence, setEscalationEvidence] = useState('');
 
-  const handleNewEscalation = (target: 'pro_manager' | 'legal' | 'super_admin') => {
+  const handleNewEscalation = async (target: 'pro_manager' | 'legal' | 'super_admin') => {
     if (!escalationEvidence.trim()) {
       toast.error('Evidence is mandatory for escalation');
       return;
     }
-    toast.success(`Escalated to ${target.replace('_', ' ')}`);
-    setEscalationEvidence('');
-    setSelectedEscalation(null);
-  };
-
-  const getTargetIcon = (target: string) => {
-    switch (target) {
-      case 'pro_manager':
-        return <User className="h-4 w-4" />;
-      case 'legal':
-        return <Scale className="h-4 w-4" />;
-      case 'super_admin':
-        return <Shield className="h-4 w-4" />;
-      default:
-        return <ArrowUpRight className="h-4 w-4" />;
+    try {
+      await insertEscalation.mutateAsync({
+        reference: `ESC-${Date.now()}`,
+        reason: escalationEvidence,
+        resolution_notes: null,
+        status: 'pending',
+        level: target === 'super_admin' ? 3 : target === 'legal' ? 2 : 1,
+      });
+      toast.success(`Escalated to ${target.replace('_', ' ')}`);
+      setEscalationEvidence('');
+    } catch {
+      toast.error('Failed to escalate');
     }
   };
 
-  const getTargetColor = (target: string) => {
-    switch (target) {
-      case 'pro_manager':
-        return 'bg-blue-500/10 text-blue-500';
-      case 'legal':
-        return 'bg-purple-500/10 text-purple-500';
-      case 'super_admin':
-        return 'bg-red-500/10 text-red-500';
-      default:
-        return 'bg-muted text-muted-foreground';
-    }
+  const getTargetIcon = (level: number) => {
+    if (level >= 3) return <Shield className="h-4 w-4" />;
+    if (level === 2) return <Scale className="h-4 w-4" />;
+    return <User className="h-4 w-4" />;
   };
 
-  const getPriorityBadge = (priority: string) => {
-    const colors = {
-      critical: 'bg-red-500 text-white',
-      high: 'bg-orange-500/10 text-orange-500',
-      medium: 'bg-yellow-500/10 text-yellow-500'
-    };
-    return <Badge className={colors[priority as keyof typeof colors]}>{priority.toUpperCase()}</Badge>;
+  const getTargetColor = (level: number) => {
+    if (level >= 3) return 'bg-red-500/10 text-red-500';
+    if (level === 2) return 'bg-purple-500/10 text-purple-500';
+    return 'bg-blue-500/10 text-blue-500';
   };
+
+  const getTargetLabel = (level: number) => level >= 3 ? 'super admin' : level === 2 ? 'legal' : 'pro manager';
 
   const getStatusBadge = (status: string) => {
-    const config = {
+    const config: Record<string, { color: string; icon: any }> = {
       pending: { color: 'bg-yellow-500/10 text-yellow-500', icon: Clock },
       in_progress: { color: 'bg-blue-500/10 text-blue-500', icon: ArrowUpRight },
       resolved: { color: 'bg-green-500/10 text-green-500', icon: CheckCircle }
     };
-    const cfg = config[status as keyof typeof config] || config.pending;
+    const cfg = config[status] || config.pending;
     const Icon = cfg.icon;
     return (
       <Badge className={cfg.color}>
@@ -137,7 +80,11 @@ export const SSMEscalations: React.FC = () => {
     );
   };
 
-  const pendingCount = escalations.filter(e => e.status === 'pending').length;
+  const allEscalations = escalations ?? [];
+  const pendingCount = allEscalations.filter(e => e.status === 'pending').length;
+
+  const ticketRef = (ticketId: string | null) => (tickets ?? []).find(t => t.id === ticketId)?.reference ?? ticketId ?? '—';
+  const ticketSubject = (ticketId: string | null) => (tickets ?? []).find(t => t.id === ticketId)?.subject ?? 'Escalation';
 
   return (
     <Card className="bg-card border-border">
@@ -200,8 +147,11 @@ export const SSMEscalations: React.FC = () => {
         </div>
 
         {/* Escalation List */}
+        {isLoading ? (
+          <div className="text-center py-8 text-muted-foreground">Loading escalations...</div>
+        ) : (
         <div className="space-y-4">
-          {escalations.map((escalation) => (
+          {allEscalations.map((escalation) => (
             <motion.div
               key={escalation.id}
               initial={{ opacity: 0, x: -10 }}
@@ -210,20 +160,21 @@ export const SSMEscalations: React.FC = () => {
             >
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-start gap-3">
-                  <div className={`p-2 rounded-lg ${getTargetColor(escalation.escalatedTo)}`}>
-                    {getTargetIcon(escalation.escalatedTo)}
+                  <div className={`p-2 rounded-lg ${getTargetColor(escalation.level)}`}>
+                    {getTargetIcon(escalation.level)}
                   </div>
                   <div>
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="font-mono text-sm text-primary">{escalation.entityId}</span>
-                      <Badge variant="outline" className="text-xs">
-                        {escalation.entityType}
-                      </Badge>
-                      {getPriorityBadge(escalation.priority)}
+                      <span className="font-mono text-sm text-primary">{escalation.reference}</span>
+                      {escalation.ticket_id && (
+                        <Badge variant="outline" className="text-xs">
+                          ticket
+                        </Badge>
+                      )}
                     </div>
-                    <h4 className="font-medium text-foreground">{escalation.entityName}</h4>
+                    <h4 className="font-medium text-foreground">{ticketSubject(escalation.ticket_id)}</h4>
                     <p className="text-sm text-muted-foreground capitalize">
-                      → {escalation.escalatedTo.replace('_', ' ')}
+                      → {getTargetLabel(escalation.level)}
                     </p>
                   </div>
                 </div>
@@ -232,22 +183,23 @@ export const SSMEscalations: React.FC = () => {
 
               <p className="text-sm text-foreground mb-2">{escalation.reason}</p>
               
-              {escalation.evidence && (
+              {escalation.resolution_notes && (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
                   <FileText className="h-3 w-3" />
-                  {escalation.evidence}
+                  {escalation.resolution_notes}
                 </div>
               )}
 
               <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>Owner: {escalation.owner}</span>
-                <span>Escalated: {new Date(escalation.escalatedAt).toLocaleString()}</span>
+                <span>Owner: {memberName(members, escalation.assigned_to) ?? '—'}</span>
+                <span>Escalated: {new Date(escalation.created_at).toLocaleString()}</span>
               </div>
             </motion.div>
           ))}
         </div>
+        )}
 
-        {escalations.length === 0 && (
+        {!isLoading && allEscalations.length === 0 && (
           <div className="text-center py-8 text-muted-foreground">
             <CheckCircle className="h-12 w-12 mx-auto mb-2 text-green-500 opacity-50" />
             <p>No active escalations</p>
