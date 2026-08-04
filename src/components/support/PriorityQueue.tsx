@@ -1,40 +1,22 @@
 import { motion } from 'framer-motion';
-import { 
-  AlertTriangle, Clock, User, ArrowUpRight, 
+import {
+  AlertTriangle, Clock, User, ArrowUpRight,
   Zap, MessageCircle, Timer
 } from 'lucide-react';
-
-const priorityTickets = [
-  {
-    id: 'TKT-1247',
-    userId: 'vala(client)***',
-    issue: 'Production system down - Invoice generation failing',
-    category: 'POS System',
-    waitTime: '8 min',
-    slaRemaining: '22 min',
-    urgencyLevel: 'critical',
-  },
-  {
-    id: 'TKT-1244',
-    userId: 'vala(client)***',
-    issue: 'Patient records not syncing - affecting operations',
-    category: 'Hospital CRM',
-    waitTime: '15 min',
-    slaRemaining: '45 min',
-    urgencyLevel: 'high',
-  },
-  {
-    id: 'TKT-1240',
-    userId: 'vala(franchise)***',
-    issue: 'Demo system not loading for client presentation',
-    category: 'Demo Engine',
-    waitTime: '22 min',
-    slaRemaining: '38 min',
-    urgencyLevel: 'high',
-  },
-];
+import { toast } from 'sonner';
+import {
+  useTickets, useTeamMembers, useUpdateRow, relativeTime,
+} from '@/hooks/useSalesSupportData';
 
 const PriorityQueue = () => {
+  const { data: tickets, isLoading } = useTickets();
+  const { data: members } = useTeamMembers('support');
+  const updateTicket = useUpdateRow('support_tickets');
+
+  const priorityTickets = (tickets ?? [])
+    .filter((t) => (t.priority === 'critical' || t.priority === 'high') && t.status !== 'resolved' && t.status !== 'closed')
+    .sort((a, b) => a.sla_minutes_remaining - b.sla_minutes_remaining);
+
   const getUrgencyStyles = (level: string) => {
     if (level === 'critical') {
       return {
@@ -50,6 +32,28 @@ const PriorityQueue = () => {
       badge: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
       pulse: false
     };
+  };
+
+  const handleTakeTicket = async (ticketId: string) => {
+    const available = (members ?? []).find((m) => m.status === 'available');
+    try {
+      await updateTicket.mutateAsync({
+        id: ticketId,
+        values: { status: 'in_progress', assigned_to: available?.id ?? null },
+      });
+      toast.success(available ? `Assigned to ${available.full_name}` : 'Ticket marked in progress');
+    } catch {
+      toast.error('Failed to take ticket');
+    }
+  };
+
+  const handleEscalate = async (ticketId: string) => {
+    try {
+      await updateTicket.mutateAsync({ id: ticketId, values: { priority: 'critical' } });
+      toast.success('Ticket escalated to critical');
+    } catch {
+      toast.error('Failed to escalate ticket');
+    }
   };
 
   return (
@@ -88,8 +92,13 @@ const PriorityQueue = () => {
 
       {/* Priority Tickets */}
       <div className="space-y-4">
+        {!isLoading && priorityTickets.length === 0 && (
+          <div className="p-8 text-center text-slate-500 rounded-2xl border border-slate-700/30 bg-slate-900/40">
+            No high-priority tickets waiting. 🎉
+          </div>
+        )}
         {priorityTickets.map((ticket, index) => {
-          const styles = getUrgencyStyles(ticket.urgencyLevel);
+          const styles = getUrgencyStyles(ticket.priority);
 
           return (
             <motion.div
@@ -111,29 +120,29 @@ const PriorityQueue = () => {
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
-                    <span className="text-sm font-mono text-slate-400">{ticket.id}</span>
+                    <span className="text-sm font-mono text-slate-400">{ticket.reference}</span>
                     <span className={`px-2 py-0.5 rounded text-xs font-medium border ${styles.badge}`}>
-                      {ticket.urgencyLevel === 'critical' ? 'CRITICAL' : 'HIGH PRIORITY'}
+                      {ticket.priority === 'critical' ? 'CRITICAL' : 'HIGH PRIORITY'}
                     </span>
                     <span className="px-2 py-0.5 rounded text-xs bg-slate-700/30 text-slate-400">
                       {ticket.category}
                     </span>
                   </div>
-                  <p className="text-white font-medium text-lg mb-3">{ticket.issue}</p>
+                  <p className="text-white font-medium text-lg mb-3">{ticket.subject}</p>
                   <div className="flex items-center gap-6 text-sm">
                     <span className="flex items-center gap-1.5 text-slate-400">
                       <User className="w-4 h-4" />
-                      {ticket.userId}
+                      {ticket.customer_name}
                     </span>
                     <span className="flex items-center gap-1.5 text-amber-400">
                       <Clock className="w-4 h-4" />
-                      Waiting: {ticket.waitTime}
+                      Opened: {relativeTime(ticket.created_at)}
                     </span>
                     <span className={`flex items-center gap-1.5 ${
-                      parseInt(ticket.slaRemaining) < 30 ? 'text-rose-400' : 'text-slate-400'
+                      ticket.sla_minutes_remaining < 30 ? 'text-rose-400' : 'text-slate-400'
                     }`}>
                       <Timer className="w-4 h-4" />
-                      SLA: {ticket.slaRemaining}
+                      SLA: {ticket.sla_minutes_remaining}m {ticket.sla_breached ? '(breached)' : 'left'}
                     </span>
                   </div>
                 </div>
@@ -143,6 +152,7 @@ const PriorityQueue = () => {
                   <motion.button
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
+                    onClick={() => handleTakeTicket(ticket.id)}
                     className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-500/20 border border-teal-500/30 text-teal-400 hover:bg-teal-500/30 transition-all text-sm font-medium"
                   >
                     <MessageCircle className="w-4 h-4" />
@@ -151,6 +161,7 @@ const PriorityQueue = () => {
                   <motion.button
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
+                    onClick={() => toast.info('AI quick fix suggestions coming soon')}
                     className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800/30 border border-slate-700/30 text-slate-300 hover:text-sky-400 hover:border-sky-500/20 transition-all text-sm font-medium"
                   >
                     <Zap className="w-4 h-4" />
@@ -159,6 +170,7 @@ const PriorityQueue = () => {
                   <motion.button
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
+                    onClick={() => handleEscalate(ticket.id)}
                     className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800/30 border border-slate-700/30 text-slate-300 hover:text-amber-400 hover:border-amber-500/20 transition-all text-sm font-medium"
                   >
                     <ArrowUpRight className="w-4 h-4" />

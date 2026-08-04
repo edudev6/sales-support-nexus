@@ -3,29 +3,75 @@ import { BarChart3, TrendingUp, Target, Clock, Star, Award, Users, DollarSign } 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { useTeamMembers, useDeals, useCommissions, useTasks, currency } from "@/hooks/useSalesSupportData";
+
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 
 const SalesPerformanceDashboard = () => {
+  const { data: members = [], isLoading: membersLoading } = useTeamMembers("sales");
+  const { data: deals = [], isLoading: dealsLoading } = useDeals();
+  const { data: commissions = [], isLoading: commissionsLoading } = useCommissions();
+  const { data: tasks = [] } = useTasks();
+
+  const loading = membersLoading || dealsLoading || commissionsLoading;
+
+  const closedWonDeals = deals.filter((d) => d.stage?.toLowerCase().includes("closed") && d.stage?.toLowerCase().includes("won"));
+  const totalRevenue = commissions.reduce((sum, c) => sum + Number(c.revenue ?? 0), 0);
+  const revenueTarget = members.reduce((sum, m) => sum + Number(m.target_amount ?? 0), 0) || 1;
+  const avgHandleTime = members.length > 0
+    ? members.reduce((sum, m) => sum + Number(m.avg_response_minutes ?? 0), 0) / members.length
+    : 0;
+  const avgCsat = members.length > 0
+    ? members.reduce((sum, m) => sum + Number(m.csat ?? 0), 0) / members.length
+    : 0;
+
   const metrics = [
-    { label: "Conversions", value: 24, target: 30, unit: "", icon: Target, color: "cyan" },
-    { label: "Revenue", value: 58000, target: 75000, unit: "$", icon: DollarSign, color: "emerald" },
-    { label: "Avg. Handle Time", value: 4.2, target: 5, unit: " min", icon: Clock, color: "amber" },
-    { label: "Satisfaction", value: 4.8, target: 5, unit: "/5", icon: Star, color: "purple" },
+    { label: "Conversions", value: closedWonDeals.length, target: Math.max(deals.length, 1), unit: "", icon: Target, color: "cyan" },
+    { label: "Revenue", value: Math.round(totalRevenue), target: Math.round(revenueTarget), unit: "$", icon: DollarSign, color: "emerald" },
+    { label: "Avg. Handle Time", value: Number(avgHandleTime.toFixed(1)), target: 5, unit: " min", icon: Clock, color: "amber" },
+    { label: "Satisfaction", value: Number(avgCsat.toFixed(1)), target: 5, unit: "/5", icon: Star, color: "purple" },
   ];
 
-  const weeklyData = [
-    { day: "Mon", conversions: 4, calls: 12, demos: 8 },
-    { day: "Tue", conversions: 6, calls: 15, demos: 10 },
-    { day: "Wed", conversions: 3, calls: 10, demos: 6 },
-    { day: "Thu", conversions: 5, calls: 14, demos: 9 },
-    { day: "Fri", conversions: 6, calls: 18, demos: 11 },
-  ];
+  const now = new Date();
+  const weeklyData = WEEKDAYS.map((day, idx) => {
+    const dayIndex = idx + 1; // Mon=1..Fri=5
+    const dayDeals = deals.filter((d) => {
+      const created = new Date(d.created_at);
+      const diffDays = Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+      return diffDays >= 0 && diffDays < 7 && created.getDay() === dayIndex;
+    });
+    const dayCalls = tasks.filter((t) => {
+      if (!t.due_at || t.task_type !== "call") return false;
+      const due = new Date(t.due_at);
+      const diffDays = Math.floor((now.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+      return diffDays >= 0 && diffDays < 7 && due.getDay() === dayIndex;
+    });
+    const dayDemos = tasks.filter((t) => {
+      if (!t.due_at || t.task_type !== "meeting") return false;
+      const due = new Date(t.due_at);
+      const diffDays = Math.floor((now.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+      return diffDays >= 0 && diffDays < 7 && due.getDay() === dayIndex;
+    });
+    return { day, conversions: dayDeals.length, calls: dayCalls.length, demos: dayDemos.length };
+  });
+  const maxConversions = Math.max(1, ...weeklyData.map((d) => d.conversions));
 
-  const leaderboard = [
-    { rank: 1, name: "Sarah Chen", conversions: 28, revenue: "$68,500", avatar: "SC" },
-    { rank: 2, name: "Mike Johnson", conversions: 24, revenue: "$58,200", avatar: "MJ" },
-    { rank: 3, name: "Emily Davis", conversions: 22, revenue: "$52,800", avatar: "ED" },
-    { rank: 4, name: "You", conversions: 24, revenue: "$58,000", avatar: "YO", isYou: true },
-  ];
+  const leaderboard = [...members]
+    .sort((a, b) => Number(b.achieved_amount ?? 0) - Number(a.achieved_amount ?? 0))
+    .slice(0, 4)
+    .map((m, index) => ({
+      rank: index + 1,
+      name: m.full_name,
+      conversions: m.leads_handled,
+      revenue: currency(m.achieved_amount),
+      avatar: m.avatar_initials || m.full_name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase(),
+    }));
+
+  const behaviorScore = Math.round((avgCsat / 5) * 100);
+
+  if (loading) {
+    return <div className="text-slate-400">Loading performance data…</div>;
+  }
 
   return (
     <div className="space-y-6">
@@ -43,7 +89,7 @@ const SalesPerformanceDashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {metrics.map((metric, index) => {
           const Icon = metric.icon;
-          const percentage = (metric.value / metric.target) * 100;
+          const percentage = metric.target > 0 ? (metric.value / metric.target) * 100 : 0;
           return (
             <motion.div
               key={metric.label}
@@ -97,7 +143,7 @@ const SalesPerformanceDashboard = () => {
                     <div className="flex-1 bg-slate-800 rounded-full h-6 overflow-hidden">
                       <motion.div
                         initial={{ width: 0 }}
-                        animate={{ width: `${(day.conversions / 8) * 100}%` }}
+                        animate={{ width: `${(day.conversions / maxConversions) * 100}%` }}
                         transition={{ delay: index * 0.1, duration: 0.5 }}
                         className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 flex items-center justify-end pr-2"
                       >
@@ -124,6 +170,7 @@ const SalesPerformanceDashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
+              {leaderboard.length === 0 && <p className="text-sm text-slate-500">No sales team members yet.</p>}
               {leaderboard.map((member, index) => (
                 <motion.div
                   key={member.name}
@@ -131,7 +178,7 @@ const SalesPerformanceDashboard = () => {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.1 }}
                   className={`flex items-center justify-between p-3 rounded-lg ${
-                    member.isYou ? "bg-cyan-500/20 border border-cyan-500/30" : "bg-slate-800/50"
+                    member.rank === 1 ? "bg-cyan-500/20 border border-cyan-500/30" : "bg-slate-800/50"
                   }`}
                 >
                   <div className="flex items-center gap-3">
@@ -147,10 +194,9 @@ const SalesPerformanceDashboard = () => {
                       {member.avatar}
                     </div>
                     <div>
-                      <span className={`font-medium ${member.isYou ? "text-cyan-300" : "text-slate-200"}`}>
+                      <span className="font-medium text-slate-200">
                         {member.name}
                       </span>
-                      {member.isYou && <Badge className="ml-2 bg-cyan-500/20 text-cyan-300 text-xs">You</Badge>}
                     </div>
                   </div>
                   <div className="text-right">
@@ -177,8 +223,10 @@ const SalesPerformanceDashboard = () => {
               </div>
             </div>
             <div className="text-right">
-              <div className="text-4xl font-bold text-purple-300">92</div>
-              <div className="text-sm text-slate-400">Excellent</div>
+              <div className="text-4xl font-bold text-purple-300">{behaviorScore}</div>
+              <div className="text-sm text-slate-400">
+                {behaviorScore >= 90 ? "Excellent" : behaviorScore >= 70 ? "Good" : "Needs Improvement"}
+              </div>
             </div>
           </div>
         </CardContent>

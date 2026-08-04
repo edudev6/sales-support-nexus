@@ -2,72 +2,75 @@ import { motion } from "framer-motion";
 import { GitBranch, User, Clock, DollarSign, ArrowRight, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useLeads, useDeals, relativeTime, currency } from "@/hooks/useSalesSupportData";
+
+const STAGE_DEFS = [
+  { key: "new", name: "New Leads", color: "cyan" },
+  { key: "contact", name: "Contacted", color: "blue" },
+  { key: "demo", name: "Demo Sent", color: "purple" },
+  { key: "negotiat", name: "Negotiation", color: "amber" },
+  { key: "closed_won", name: "Closed Won", color: "emerald" },
+] as const;
+
+const getColorClasses = (color: string) => {
+  const colors: Record<string, { bg: string; border: string; text: string; badge: string }> = {
+    cyan: { bg: "bg-cyan-500/20", border: "border-cyan-500/30", text: "text-cyan-400", badge: "bg-cyan-500" },
+    blue: { bg: "bg-blue-500/20", border: "border-blue-500/30", text: "text-blue-400", badge: "bg-blue-500" },
+    purple: { bg: "bg-purple-500/20", border: "border-purple-500/30", text: "text-purple-400", badge: "bg-purple-500" },
+    amber: { bg: "bg-amber-500/20", border: "border-amber-500/30", text: "text-amber-400", badge: "bg-amber-500" },
+    emerald: { bg: "bg-emerald-500/20", border: "border-emerald-500/30", text: "text-emerald-400", badge: "bg-emerald-500" },
+  };
+  return colors[color] || colors.cyan;
+};
 
 const ConversionPipeline = () => {
-  const stages = [
-    { 
-      name: "New Leads", 
-      color: "cyan", 
-      count: 12, 
-      value: "$45,000",
-      leads: [
-        { name: "Global Tech", value: "$15,000", time: "2 days" },
-        { name: "MedCare Inc", value: "$12,000", time: "1 day" },
-        { name: "EduPlus", value: "$8,000", time: "3 days" },
-      ]
-    },
-    { 
-      name: "Contacted", 
-      color: "blue", 
-      count: 8, 
-      value: "$32,000",
-      leads: [
-        { name: "RetailMax", value: "$18,000", time: "5 days" },
-        { name: "LogiFlow", value: "$14,000", time: "4 days" },
-      ]
-    },
-    { 
-      name: "Demo Sent", 
-      color: "purple", 
-      count: 6, 
-      value: "$28,000",
-      leads: [
-        { name: "FinServe", value: "$20,000", time: "7 days" },
-        { name: "BuildCorp", value: "$8,000", time: "6 days" },
-      ]
-    },
-    { 
-      name: "Negotiation", 
-      color: "amber", 
-      count: 4, 
-      value: "$22,000",
-      leads: [
-        { name: "TechStart", value: "$15,000", time: "10 days" },
-        { name: "HealthPro", value: "$7,000", time: "8 days" },
-      ]
-    },
-    { 
-      name: "Closed Won", 
-      color: "emerald", 
-      count: 8, 
-      value: "$58,000",
-      leads: [
-        { name: "CloudNine", value: "$25,000", time: "Closed" },
-        { name: "DataSync", value: "$18,000", time: "Closed" },
-      ]
-    },
-  ];
+  const { data: leads = [], isLoading: leadsLoading } = useLeads();
+  const { data: deals = [], isLoading: dealsLoading } = useDeals();
+  const loading = leadsLoading || dealsLoading;
 
-  const getColorClasses = (color: string) => {
-    const colors: Record<string, { bg: string; border: string; text: string; badge: string }> = {
-      cyan: { bg: "bg-cyan-500/20", border: "border-cyan-500/30", text: "text-cyan-400", badge: "bg-cyan-500" },
-      blue: { bg: "bg-blue-500/20", border: "border-blue-500/30", text: "text-blue-400", badge: "bg-blue-500" },
-      purple: { bg: "bg-purple-500/20", border: "border-purple-500/30", text: "text-purple-400", badge: "bg-purple-500" },
-      amber: { bg: "bg-amber-500/20", border: "border-amber-500/30", text: "text-amber-400", badge: "bg-amber-500" },
-      emerald: { bg: "bg-emerald-500/20", border: "border-emerald-500/30", text: "text-emerald-400", badge: "bg-emerald-500" },
+  const stages = STAGE_DEFS.map((def) => {
+    const stageLeads =
+      def.key === "closed_won"
+        ? leads.filter((l) => l.stage?.toLowerCase().includes("closed") && l.stage?.toLowerCase().includes("won"))
+        : leads.filter((l) => l.stage?.toLowerCase().replace(/[_\s-]/g, "").includes(def.key.replace(/[_\s-]/g, "")));
+    const totalValue = stageLeads.reduce((sum, l) => sum + Number(l.value ?? 0), 0);
+    return {
+      ...def,
+      count: stageLeads.length,
+      value: currency(totalValue),
+      leads: stageLeads.slice(0, 3).map((l) => ({
+        name: l.company,
+        value: currency(l.value),
+        time: relativeTime(l.created_at),
+      })),
     };
-    return colors[color] || colors.cyan;
-  };
+  });
+
+  const totalPipelineValue = leads.reduce((sum, l) => sum + Number(l.value ?? 0), 0);
+  const totalInPipeline = leads.length;
+  const closedWon = stages.find((s) => s.key === "closed_won")?.count ?? 0;
+  const conversionRate = totalInPipeline > 0 ? Math.round((closedWon / totalInPipeline) * 100) : 0;
+  const closedDeals = deals.filter((d) => d.stage?.toLowerCase().includes("closed"));
+  const avgCycleDays =
+    closedDeals.length > 0
+      ? Math.round(
+          closedDeals.reduce((sum, d) => {
+            const start = new Date(d.created_at).getTime();
+            const end = new Date(d.updated_at).getTime();
+            return sum + Math.max(0, (end - start) / (1000 * 60 * 60 * 24));
+          }, 0) / closedDeals.length,
+        )
+      : 0;
+  const allValues = [...leads.map((l) => Number(l.value ?? 0)), ...deals.map((d) => Number(d.value ?? 0))];
+  const avgDealSize = allValues.length > 0 ? Math.round(allValues.reduce((a, b) => a + b, 0) / allValues.length) : 0;
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <p className="text-slate-400">Loading pipeline…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -78,12 +81,12 @@ const ConversionPipeline = () => {
         </div>
         <div className="flex items-center gap-4">
           <div className="text-right">
-            <div className="text-2xl font-bold text-cyan-100">$185,000</div>
+            <div className="text-2xl font-bold text-cyan-100">{currency(totalPipelineValue)}</div>
             <div className="text-xs text-slate-400">Total Pipeline Value</div>
           </div>
           <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-3 py-1.5">
             <TrendingUp className="w-4 h-4 mr-1" />
-            +23% vs Last Month
+            {conversionRate}% Conversion Rate
           </Badge>
         </div>
       </div>
@@ -107,9 +110,12 @@ const ConversionPipeline = () => {
                   <div className="text-lg font-bold text-slate-100">{stage.value}</div>
                 </CardHeader>
                 <CardContent className="space-y-2">
+                  {stage.leads.length === 0 && (
+                    <div className="text-xs text-slate-500 italic">No leads in this stage</div>
+                  )}
                   {stage.leads.map((lead, leadIndex) => (
                     <motion.div
-                      key={lead.name}
+                      key={lead.name + leadIndex}
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: stageIndex * 0.1 + leadIndex * 0.05 }}
@@ -150,7 +156,7 @@ const ConversionPipeline = () => {
             <div className="flex items-center gap-3">
               <GitBranch className="w-8 h-8 text-cyan-400" />
               <div>
-                <div className="text-2xl font-bold text-cyan-100">38</div>
+                <div className="text-2xl font-bold text-cyan-100">{totalInPipeline}</div>
                 <div className="text-xs text-slate-400">Total in Pipeline</div>
               </div>
             </div>
@@ -161,7 +167,7 @@ const ConversionPipeline = () => {
             <div className="flex items-center gap-3">
               <TrendingUp className="w-8 h-8 text-emerald-400" />
               <div>
-                <div className="text-2xl font-bold text-emerald-100">68%</div>
+                <div className="text-2xl font-bold text-emerald-100">{conversionRate}%</div>
                 <div className="text-xs text-slate-400">Conversion Rate</div>
               </div>
             </div>
@@ -172,7 +178,7 @@ const ConversionPipeline = () => {
             <div className="flex items-center gap-3">
               <Clock className="w-8 h-8 text-amber-400" />
               <div>
-                <div className="text-2xl font-bold text-amber-100">12 days</div>
+                <div className="text-2xl font-bold text-amber-100">{avgCycleDays} days</div>
                 <div className="text-xs text-slate-400">Avg. Sales Cycle</div>
               </div>
             </div>
@@ -183,7 +189,7 @@ const ConversionPipeline = () => {
             <div className="flex items-center gap-3">
               <DollarSign className="w-8 h-8 text-purple-400" />
               <div>
-                <div className="text-2xl font-bold text-purple-100">$4,868</div>
+                <div className="text-2xl font-bold text-purple-100">{currency(avgDealSize)}</div>
                 <div className="text-xs text-slate-400">Avg. Deal Size</div>
               </div>
             </div>

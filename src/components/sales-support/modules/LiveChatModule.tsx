@@ -8,60 +8,56 @@ import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-interface ChatSession {
-  id: string;
-  visitor: string;
-  email: string;
-  status: "waiting" | "active" | "resolved" | "transferred";
-  assignedTo: string | null;
-  waitTime: string;
-  messageCount: number;
-  sentiment: "positive" | "neutral" | "negative";
-  lastMessage: string;
-  startedAt: string;
-}
+import { useChatSessions, useTeamMembers, useUpdateRow, useInsertRow, relativeTime, memberName } from "@/hooks/useSalesSupportData";
 
 const LiveChatModule = () => {
-  const [chats, setChats] = useState<ChatSession[]>([
-    { id: "CHAT-001", visitor: "John D.", email: "john@example.com", status: "active", assignedTo: "Sarah Chen", waitTime: "0:45", messageCount: 12, sentiment: "positive", lastMessage: "Thank you for your help!", startedAt: "5 min ago" },
-    { id: "CHAT-002", visitor: "Maria S.", email: "maria@example.com", status: "waiting", assignedTo: null, waitTime: "2:30", messageCount: 3, sentiment: "neutral", lastMessage: "Hello, I need help with my order", startedAt: "3 min ago" },
-    { id: "CHAT-003", visitor: "Robert K.", email: "robert@example.com", status: "active", assignedTo: "Mike Johnson", waitTime: "1:15", messageCount: 8, sentiment: "negative", lastMessage: "This is ridiculous! I've been waiting for hours", startedAt: "10 min ago" },
-    { id: "CHAT-004", visitor: "Lisa P.", email: "lisa@example.com", status: "resolved", assignedTo: "Lisa Park", waitTime: "-", messageCount: 15, sentiment: "positive", lastMessage: "Great, thanks!", startedAt: "25 min ago" },
-    { id: "CHAT-005", visitor: "Anonymous", email: "-", status: "waiting", assignedTo: null, waitTime: "5:00", messageCount: 1, sentiment: "neutral", lastMessage: "Hi", startedAt: "5 min ago" },
-  ]);
+  const { data: sessionsData, isLoading } = useChatSessions();
+  const { data: members } = useTeamMembers();
+  const updateSession = useUpdateRow("chat_sessions");
+  const insertMessage = useInsertRow("chat_messages");
+  const [messageText, setMessageText] = useState("");
 
-  const agents = ["Sarah Chen", "Mike Johnson", "Lisa Park", "Emma Davis", "James Wilson"];
+  const chats = sessionsData ?? [];
+  const agents = members ?? [];
 
-  const handleAcceptChat = (chatId: string, agent: string) => {
+  const handleAcceptChat = async (chatId: string, agentId: string) => {
     toast.loading("Accepting chat...", { id: `accept-${chatId}` });
-    setTimeout(() => {
-      setChats(chats.map(c => c.id === chatId ? { ...c, assignedTo: agent, status: "active", waitTime: "0:00" } : c));
-      toast.success(`Chat accepted by ${agent}`, { id: `accept-${chatId}` });
-    }, 500);
+    try {
+      await updateSession.mutateAsync({ id: chatId, values: { agent_id: agentId, status: "active" } });
+      toast.success(`Chat accepted by ${memberName(agents, agentId) ?? "agent"}`, { id: `accept-${chatId}` });
+    } catch {
+      toast.error("Failed to accept chat", { id: `accept-${chatId}` });
+    }
   };
 
-  const handleTransfer = (chatId: string, agent: string) => {
+  const handleTransfer = async (chatId: string, agentId: string) => {
     toast.loading("Transferring chat...", { id: `transfer-${chatId}` });
-    setTimeout(() => {
-      setChats(chats.map(c => c.id === chatId ? { ...c, assignedTo: agent, status: "transferred" } : c));
-      toast.success(`Transferred to ${agent}`, { id: `transfer-${chatId}` });
-    }, 500);
+    try {
+      await updateSession.mutateAsync({ id: chatId, values: { agent_id: agentId, status: "transferred" } });
+      toast.success(`Transferred to ${memberName(agents, agentId) ?? "agent"}`, { id: `transfer-${chatId}` });
+    } catch {
+      toast.error("Failed to transfer chat", { id: `transfer-${chatId}` });
+    }
   };
 
-  const handleResolve = (chatId: string) => {
+  const handleResolve = async (chatId: string) => {
     toast.loading("Closing chat...", { id: `resolve-${chatId}` });
-    setTimeout(() => {
-      setChats(chats.map(c => c.id === chatId ? { ...c, status: "resolved" } : c));
+    try {
+      await updateSession.mutateAsync({ id: chatId, values: { status: "resolved", ended_at: new Date().toISOString() } });
       toast.success("Chat resolved", { id: `resolve-${chatId}` });
-    }, 500);
+    } catch {
+      toast.error("Failed to resolve chat", { id: `resolve-${chatId}` });
+    }
   };
 
-  const handleEscalate = (chatId: string) => {
+  const handleEscalate = async (chatId: string) => {
     toast.loading("Escalating chat...", { id: `escalate-${chatId}` });
-    setTimeout(() => {
+    try {
+      await insertMessage.mutateAsync({ session_id: chatId, sender_type: "system", body: "Chat escalated to supervisor" });
       toast.warning("Chat escalated to supervisor", { id: `escalate-${chatId}` });
-    }, 600);
+    } catch {
+      toast.error("Failed to escalate chat", { id: `escalate-${chatId}` });
+    }
   };
 
   const getSentimentColor = (sentiment: string) => {
@@ -134,6 +130,8 @@ const LiveChatModule = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
+            {isLoading && <p className="text-slate-400 text-sm">Loading chats…</p>}
+            {!isLoading && chats.length === 0 && <p className="text-slate-400 text-sm">No chat sessions.</p>}
             {chats.map((chat, index) => (
               <motion.div
                 key={chat.id}
@@ -145,29 +143,22 @@ const LiveChatModule = () => {
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-3">
                     <Avatar className="h-10 w-10">
-                      <AvatarFallback className="bg-cyan-500/20 text-cyan-300">{chat.visitor.substring(0, 2).toUpperCase()}</AvatarFallback>
+                      <AvatarFallback className="bg-cyan-500/20 text-cyan-300">{chat.visitor_name.substring(0, 2).toUpperCase()}</AvatarFallback>
                     </Avatar>
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-cyan-400 text-sm">{chat.id}</span>
-                        <span className="font-medium text-slate-100">{chat.visitor}</span>
+                        <span className="font-mono text-cyan-400 text-sm">{chat.id.slice(0, 8)}</span>
+                        <span className="font-medium text-slate-100">{chat.visitor_name}</span>
                         <Badge className={getStatusColor(chat.status)}>{chat.status}</Badge>
                         <Badge className={getSentimentColor(chat.sentiment)}>{chat.sentiment}</Badge>
                       </div>
-                      <p className="text-sm text-slate-400">{chat.email} • {chat.messageCount} messages • Started {chat.startedAt}</p>
+                      <p className="text-sm text-slate-400">{chat.visitor_email ?? "-"} • Started {relativeTime(chat.started_at)}</p>
                     </div>
                   </div>
-                  {chat.status === "waiting" && (
-                    <div className="flex items-center gap-2 text-amber-400">
-                      <Clock className="w-4 h-4" />
-                      <span>Waiting: {chat.waitTime}</span>
-                    </div>
-                  )}
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-slate-300 italic">"{chat.lastMessage}"</p>
-
+                  <div />
                   <div className="flex items-center gap-2">
                     {chat.status === "waiting" && (
                       <Select onValueChange={(agent) => handleAcceptChat(chat.id, agent)}>
@@ -176,7 +167,7 @@ const LiveChatModule = () => {
                         </SelectTrigger>
                         <SelectContent>
                           {agents.map(agent => (
-                            <SelectItem key={agent} value={agent}>{agent}</SelectItem>
+                            <SelectItem key={agent.id} value={agent.id}>{agent.full_name}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -189,8 +180,8 @@ const LiveChatModule = () => {
                             <SelectValue placeholder="Transfer" />
                           </SelectTrigger>
                           <SelectContent>
-                            {agents.filter(a => a !== chat.assignedTo).map(agent => (
-                              <SelectItem key={agent} value={agent}>{agent}</SelectItem>
+                            {agents.filter(a => a.id !== chat.agent_id).map(agent => (
+                              <SelectItem key={agent.id} value={agent.id}>{agent.full_name}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
