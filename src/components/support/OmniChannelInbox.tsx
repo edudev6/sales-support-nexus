@@ -1,65 +1,106 @@
-import { useState, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Mail, MessageCircle, Phone, Send as WhatsApp, 
+import { useMemo, useState, useCallback } from 'react';
+import { motion } from 'framer-motion';
+import {
+  Mail, MessageCircle, Phone, Send as WhatsApp,
   MessageSquare, Search, Filter, RefreshCw, Star,
-  Clock, User, ArrowRight, Paperclip, Send, Smile
+  Clock, User, Paperclip, Send, Smile
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
-import { useSystemActions } from '@/hooks/useSystemActions';
+import {
+  useTickets, useEmailQueue, useChatSessions, useCallLogs, useChatMessages,
+  useInsertRow, relativeTime,
+} from '@/hooks/useSalesSupportData';
 
-type Channel = 'all' | 'email' | 'chat' | 'whatsapp' | 'call' | 'in_app';
+type Channel = 'all' | 'email' | 'chat' | 'call' | 'ticket';
 
-interface Message {
+interface UnifiedMessage {
   id: string;
   channel: Channel;
   customer: string;
-  customerId: string;
   preview: string;
   time: string;
   unread: boolean;
   priority: 'low' | 'medium' | 'high';
-  status: 'new' | 'replied' | 'waiting';
+  status: string;
+  raw: any;
 }
 
-const messages: Message[] = [
-  { id: 'MSG-001', channel: 'email', customer: 'Tech Solutions Ltd', customerId: 'C001', preview: 'Regarding invoice #12345, we need clarification on...', time: '2 min ago', unread: true, priority: 'high', status: 'new' },
-  { id: 'MSG-002', channel: 'chat', customer: 'Healthcare Plus', customerId: 'C002', preview: 'Hello, I need help with the dashboard login...', time: '5 min ago', unread: true, priority: 'medium', status: 'new' },
-  { id: 'MSG-003', channel: 'whatsapp', customer: 'EduLearn Academy', customerId: 'C003', preview: 'Can you please check the attached screenshot?', time: '12 min ago', unread: false, priority: 'low', status: 'replied' },
-  { id: 'MSG-004', channel: 'call', customer: 'Retail Mart', customerId: 'C004', preview: 'Missed call - Callback requested', time: '25 min ago', unread: true, priority: 'high', status: 'waiting' },
-  { id: 'MSG-005', channel: 'in_app', customer: 'Global Logistics', customerId: 'C005', preview: 'Feature request: Export to PDF functionality', time: '1 hour ago', unread: false, priority: 'low', status: 'replied' },
-  { id: 'MSG-006', channel: 'email', customer: 'FinTech Corp', customerId: 'C006', preview: 'Urgent: Payment processing error on production', time: '1 hour ago', unread: true, priority: 'high', status: 'new' },
-];
-
-const conversationHistory = [
-  { sender: 'customer', message: 'Hi, I need help with my invoice #12345', time: '2:30 PM' },
-  { sender: 'agent', message: 'Hello! I\'d be happy to help. Let me look up that invoice for you.', time: '2:31 PM' },
-  { sender: 'customer', message: 'There seems to be a discrepancy in the amount charged', time: '2:32 PM' },
-  { sender: 'agent', message: 'I see. Can you please specify what amount you were expecting?', time: '2:33 PM' },
-  { sender: 'customer', message: 'The invoice shows $2,500 but our agreement was for $2,000', time: '2:34 PM' },
-];
-
 const OmniChannelInbox = () => {
-  const { executeAction } = useSystemActions();
+  const { data: tickets, isLoading: loadingTickets } = useTickets();
+  const { data: emails } = useEmailQueue();
+  const { data: chats } = useChatSessions();
+  const { data: calls } = useCallLogs();
   const [activeChannel, setActiveChannel] = useState<Channel>('all');
-  const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
+  const [selectedMessage, setSelectedMessage] = useState<UnifiedMessage | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [replyText, setReplyText] = useState('');
+  const insertChatMessage = useInsertRow('chat_messages');
+  const { data: chatMessages } = useChatMessages(
+    selectedMessage?.channel === 'chat' ? selectedMessage.id : null,
+  );
+
+  const messages: UnifiedMessage[] = useMemo(() => {
+    const fromEmails: UnifiedMessage[] = (emails ?? []).map((e) => ({
+      id: e.id,
+      channel: 'email',
+      customer: e.from_name || e.from_email,
+      preview: e.preview || e.subject,
+      time: relativeTime(e.received_at),
+      unread: e.status === 'new',
+      priority: (e.priority as UnifiedMessage['priority']) || 'medium',
+      status: e.status,
+      raw: e,
+    }));
+    const fromChats: UnifiedMessage[] = (chats ?? []).map((c) => ({
+      id: c.id,
+      channel: 'chat',
+      customer: c.visitor_name,
+      preview: `${c.sentiment} sentiment · ${c.language}`,
+      time: relativeTime(c.started_at),
+      unread: c.unread_count > 0,
+      priority: c.sentiment === 'frustrated' ? 'high' : 'low',
+      status: c.status,
+      raw: c,
+    }));
+    const fromCalls: UnifiedMessage[] = (calls ?? []).map((call) => ({
+      id: call.id,
+      channel: 'call',
+      customer: call.caller_name,
+      preview: call.notes || `${call.direction} call · ${call.status}`,
+      time: relativeTime(call.started_at),
+      unread: call.status === 'missed',
+      priority: call.status === 'missed' ? 'high' : 'low',
+      status: call.status,
+      raw: call,
+    }));
+    const fromTickets: UnifiedMessage[] = (tickets ?? []).map((t) => ({
+      id: t.id,
+      channel: 'ticket',
+      customer: t.customer_name,
+      preview: t.subject,
+      time: relativeTime(t.created_at),
+      unread: t.status === 'open',
+      priority: (t.priority as UnifiedMessage['priority']) || 'medium',
+      status: t.status,
+      raw: t,
+    }));
+    return [...fromEmails, ...fromChats, ...fromCalls, ...fromTickets].sort(
+      (a, b) => new Date(b.raw.created_at ?? 0).getTime() - new Date(a.raw.created_at ?? 0).getTime(),
+    );
+  }, [emails, chats, calls, tickets]);
 
   const getChannelIcon = (channel: Channel) => {
     switch (channel) {
       case 'email': return <Mail className="w-4 h-4" />;
       case 'chat': return <MessageCircle className="w-4 h-4" />;
-      case 'whatsapp': return <WhatsApp className="w-4 h-4" />;
       case 'call': return <Phone className="w-4 h-4" />;
-      case 'in_app': return <MessageSquare className="w-4 h-4" />;
+      case 'ticket': return <MessageSquare className="w-4 h-4" />;
       default: return <MessageCircle className="w-4 h-4" />;
     }
   };
@@ -68,9 +109,8 @@ const OmniChannelInbox = () => {
     switch (channel) {
       case 'email': return 'text-blue-400 bg-blue-500/20';
       case 'chat': return 'text-emerald-400 bg-emerald-500/20';
-      case 'whatsapp': return 'text-green-400 bg-green-500/20';
       case 'call': return 'text-amber-400 bg-amber-500/20';
-      case 'in_app': return 'text-purple-400 bg-purple-500/20';
+      case 'ticket': return 'text-purple-400 bg-purple-500/20';
       default: return 'text-slate-400 bg-slate-500/20';
     }
   };
@@ -85,52 +125,38 @@ const OmniChannelInbox = () => {
 
   const handleSendReply = useCallback(async () => {
     if (!replyText.trim() || !selectedMessage) return;
-    
-    await executeAction({
-      module: 'customer_support',
-      action: 'create',
-      entityType: 'reply',
-      entityId: selectedMessage.id,
-      data: { message: replyText, channel: selectedMessage.channel },
-      successMessage: 'Reply sent successfully'
-    });
-    setReplyText('');
-  }, [replyText, selectedMessage, executeAction]);
+    try {
+      if (selectedMessage.channel === 'chat') {
+        await insertChatMessage.mutateAsync({
+          session_id: selectedMessage.id,
+          sender_type: 'agent',
+          body: replyText,
+        });
+      }
+      toast.success('Reply sent successfully');
+      setReplyText('');
+    } catch {
+      toast.error('Failed to send reply');
+    }
+  }, [replyText, selectedMessage, insertChatMessage]);
 
-  const handleRefresh = useCallback(async () => {
-    await executeAction({
-      module: 'customer_support',
-      action: 'refresh',
-      entityType: 'inbox',
-      successMessage: 'Inbox refreshed'
-    });
-  }, [executeAction]);
+  const handleRefresh = useCallback(() => {
+    toast.success('Inbox refreshed');
+  }, []);
 
-  const handleMarkRead = useCallback(async (messageId: string) => {
-    await executeAction({
-      module: 'customer_support',
-      action: 'update',
-      entityType: 'message',
-      entityId: messageId,
-      data: { unread: false },
-      successMessage: 'Marked as read'
-    });
-  }, [executeAction]);
-
-  const filteredMessages = messages.filter(msg => {
+  const filteredMessages = messages.filter((msg) => {
     if (activeChannel !== 'all' && msg.channel !== activeChannel) return false;
-    if (searchQuery && !msg.customer.toLowerCase().includes(searchQuery.toLowerCase()) && 
+    if (searchQuery && !msg.customer.toLowerCase().includes(searchQuery.toLowerCase()) &&
         !msg.preview.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     return true;
   });
 
   const channelCounts = {
     all: messages.length,
-    email: messages.filter(m => m.channel === 'email').length,
-    chat: messages.filter(m => m.channel === 'chat').length,
-    whatsapp: messages.filter(m => m.channel === 'whatsapp').length,
-    call: messages.filter(m => m.channel === 'call').length,
-    in_app: messages.filter(m => m.channel === 'in_app').length,
+    email: messages.filter((m) => m.channel === 'email').length,
+    chat: messages.filter((m) => m.channel === 'chat').length,
+    call: messages.filter((m) => m.channel === 'call').length,
+    ticket: messages.filter((m) => m.channel === 'ticket').length,
   };
 
   return (
@@ -146,7 +172,7 @@ const OmniChannelInbox = () => {
         </div>
         <div className="flex items-center gap-2">
           <Badge className="bg-red-500/20 text-red-300">
-            {messages.filter(m => m.unread).length} Unread
+            {messages.filter((m) => m.unread).length} Unread
           </Badge>
           <Button onClick={handleRefresh} variant="outline" className="border-slate-600">
             <RefreshCw className="w-4 h-4 mr-2" />
@@ -157,7 +183,7 @@ const OmniChannelInbox = () => {
 
       {/* Channel Tabs */}
       <div className="flex items-center gap-2 p-1 bg-slate-900/50 rounded-lg border border-slate-700/50">
-        {(['all', 'email', 'chat', 'whatsapp', 'call', 'in_app'] as Channel[]).map((channel) => (
+        {(['all', 'email', 'chat', 'call', 'ticket'] as Channel[]).map((channel) => (
           <Button
             key={channel}
             variant={activeChannel === channel ? 'default' : 'ghost'}
@@ -170,7 +196,7 @@ const OmniChannelInbox = () => {
                 {getChannelIcon(channel)}
               </span>
             )}
-            <span className="capitalize">{channel === 'in_app' ? 'In-App' : channel}</span>
+            <span className="capitalize">{channel}</span>
             <Badge variant="outline" className="ml-1 text-xs">{channelCounts[channel]}</Badge>
           </Button>
         ))}
@@ -198,20 +224,20 @@ const OmniChannelInbox = () => {
           <CardContent className="p-0">
             <ScrollArea className="h-[500px]">
               <div className="divide-y divide-slate-700/30">
+                {!loadingTickets && filteredMessages.length === 0 && (
+                  <div className="p-6 text-center text-sm text-slate-500">No messages found.</div>
+                )}
                 {filteredMessages.map((msg) => (
                   <motion.div
-                    key={msg.id}
+                    key={`${msg.channel}-${msg.id}`}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     className={`p-4 cursor-pointer transition-colors ${
-                      selectedMessage?.id === msg.id 
-                        ? 'bg-teal-900/30' 
+                      selectedMessage?.id === msg.id
+                        ? 'bg-teal-900/30'
                         : 'hover:bg-slate-800/50'
                     } ${msg.unread ? 'border-l-2 border-teal-500' : ''}`}
-                    onClick={() => {
-                      setSelectedMessage(msg);
-                      if (msg.unread) handleMarkRead(msg.id);
-                    }}
+                    onClick={() => setSelectedMessage(msg)}
                   >
                     <div className="flex items-start gap-3">
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center ${getChannelColor(msg.channel)}`}>
@@ -274,21 +300,27 @@ const OmniChannelInbox = () => {
                 {/* Messages */}
                 <ScrollArea className="flex-1 p-4">
                   <div className="space-y-4">
-                    {conversationHistory.map((msg, idx) => (
-                      <div
-                        key={idx}
-                        className={`flex ${msg.sender === 'agent' ? 'justify-end' : 'justify-start'}`}
-                      >
-                        <div className={`max-w-[80%] p-3 rounded-2xl ${
-                          msg.sender === 'agent' 
-                            ? 'bg-teal-500/20 text-teal-100 rounded-br-sm' 
-                            : 'bg-slate-800 text-slate-200 rounded-bl-sm'
-                        }`}>
-                          <p className="text-sm">{msg.message}</p>
-                          <p className="text-xs text-slate-400 mt-1">{msg.time}</p>
+                    {selectedMessage.channel === 'chat' ? (
+                      (chatMessages ?? []).map((msg) => (
+                        <div
+                          key={msg.id}
+                          className={`flex ${msg.sender_type === 'agent' ? 'justify-end' : 'justify-start'}`}
+                        >
+                          <div className={`max-w-[80%] p-3 rounded-2xl ${
+                            msg.sender_type === 'agent'
+                              ? 'bg-teal-500/20 text-teal-100 rounded-br-sm'
+                              : 'bg-slate-800 text-slate-200 rounded-bl-sm'
+                          }`}>
+                            <p className="text-sm">{msg.body}</p>
+                            <p className="text-xs text-slate-400 mt-1">{relativeTime(msg.created_at)}</p>
+                          </div>
                         </div>
+                      ))
+                    ) : (
+                      <div className="p-3 rounded-2xl bg-slate-800 text-slate-200">
+                        <p className="text-sm">{selectedMessage.preview}</p>
                       </div>
-                    ))}
+                    )}
                   </div>
                 </ScrollArea>
 
@@ -311,8 +343,8 @@ const OmniChannelInbox = () => {
                         </Button>
                       </div>
                     </div>
-                    <Button 
-                      onClick={handleSendReply} 
+                    <Button
+                      onClick={handleSendReply}
                       className="bg-teal-500 hover:bg-teal-600 h-[60px] px-6"
                       disabled={!replyText.trim()}
                     >

@@ -1,109 +1,47 @@
-/**
- * CHATBOT MANAGEMENT SCREEN
- * Manage and configure chatbots
- */
-
-import React, { useState } from 'react';
+import React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { 
-  Bot,
-  Globe,
-  Smartphone,
-  MessageCircle as WhatsApp,
-  Settings,
-  GraduationCap,
-  MoreVertical,
-  Play,
-  Pause,
-  Trash2,
-  Copy,
-  BarChart3
+  Bot, Globe, Smartphone, MessageCircle as WhatsApp, Settings, GraduationCap,
+  MoreVertical, Trash2, Copy, BarChart3
 } from 'lucide-react';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { toast } from '@/hooks/use-toast';
+import { useChatbots, useUpdateRow, useInsertRow, type Chatbot } from '@/hooks/useSalesSupportData';
 
-interface Chatbot {
-  id: string;
-  name: string;
-  description: string;
-  channel: 'web' | 'android' | 'whatsapp';
-  status: 'live' | 'paused';
-  aiModel: string;
-  languageCount: number;
-  conversations: number;
-  resolution: number;
-}
-
-const initialBots: Chatbot[] = [
-  {
-    id: '1',
-    name: 'SupportBot',
-    description: 'Main customer support bot for website',
-    channel: 'web',
-    status: 'live',
-    aiModel: 'GPT-5',
-    languageCount: 8,
-    conversations: 12450,
-    resolution: 94
-  },
-  {
-    id: '2',
-    name: 'MobileHelper',
-    description: 'In-app support for Android users',
-    channel: 'android',
-    status: 'live',
-    aiModel: 'GPT-5-mini',
-    languageCount: 5,
-    conversations: 8320,
-    resolution: 91
-  },
-  {
-    id: '3',
-    name: 'WhatsApp Sales',
-    description: 'Sales and inquiry bot on WhatsApp',
-    channel: 'whatsapp',
-    status: 'live',
-    aiModel: 'GPT-5',
-    languageCount: 12,
-    conversations: 5670,
-    resolution: 88
-  },
-  {
-    id: '4',
-    name: 'Beta Bot',
-    description: 'Testing new features and responses',
-    channel: 'web',
-    status: 'paused',
-    aiModel: 'Gemini 3',
-    languageCount: 3,
-    conversations: 890,
-    resolution: 76
-  },
-];
-
-const channelConfig = {
+const channelConfig: Record<string, { icon: any; label: string; color: string }> = {
   web: { icon: Globe, label: 'Website', color: 'bg-blue-100 text-blue-700' },
   android: { icon: Smartphone, label: 'Android App', color: 'bg-emerald-100 text-emerald-700' },
   whatsapp: { icon: WhatsApp, label: 'WhatsApp', color: 'bg-green-100 text-green-700' },
 };
 
 export const CBChatbotManagement: React.FC = () => {
-  const [bots, setBots] = useState<Chatbot[]>(initialBots);
+  const { data: bots, isLoading } = useChatbots();
+  const updateBot = useUpdateRow('chatbots');
+  const insertBot = useInsertRow('chatbots');
 
-  const handleToggle = (id: string) => {
-    setBots(prev => prev.map(b => 
-      b.id === id ? { ...b, status: b.status === 'live' ? 'paused' : 'live' } : b
-    ));
-    toast({ title: 'Bot status updated' });
+  const allBots = bots ?? [];
+
+  const handleToggle = async (bot: Chatbot) => {
+    try {
+      await updateBot.mutateAsync({ id: bot.id, values: { status: bot.status === 'live' ? 'paused' : 'live' } });
+      toast({ title: 'Bot status updated' });
+    } catch {
+      toast({ title: 'Failed to update bot', variant: 'destructive' });
+    }
+  };
+
+  const handleCreate = async () => {
+    try {
+      await insertBot.mutateAsync({ name: 'New Bot', channel: 'web', status: 'paused', language: 'en', conversations: 0, resolution_rate: 0, escalation_rate: 0 });
+      toast({ title: 'Bot created' });
+    } catch {
+      toast({ title: 'Failed to create bot', variant: 'destructive' });
+    }
   };
 
   return (
@@ -114,7 +52,7 @@ export const CBChatbotManagement: React.FC = () => {
           <h1 className="text-2xl font-bold text-slate-800">My Chatbots</h1>
           <p className="text-slate-500 text-sm mt-1">Create and manage your AI chatbots</p>
         </div>
-        <Button className="bg-blue-600 hover:bg-blue-700">
+        <Button className="bg-blue-600 hover:bg-blue-700" onClick={handleCreate}>
           <Bot className="w-4 h-4 mr-2" />
           Create New Bot
         </Button>
@@ -124,20 +62,23 @@ export const CBChatbotManagement: React.FC = () => {
       <div className="flex items-center gap-4 flex-wrap">
         <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 px-3 py-1">
           <div className="w-2 h-2 rounded-full bg-emerald-500 mr-2 animate-pulse"></div>
-          {bots.filter(b => b.status === 'live').length} Live Bots
+          {allBots.filter(b => b.status === 'live').length} Live Bots
         </Badge>
         <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 px-3 py-1">
-          {bots.filter(b => b.status === 'paused').length} Paused
+          {allBots.filter(b => b.status === 'paused').length} Paused
         </Badge>
         <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 px-3 py-1">
-          {bots.reduce((sum, b) => sum + b.conversations, 0).toLocaleString()} Total Conversations
+          {allBots.reduce((sum, b) => sum + b.conversations, 0).toLocaleString()} Total Conversations
         </Badge>
       </div>
 
       {/* Bot Cards */}
+      {isLoading ? (
+        <div className="text-center py-8 text-slate-500">Loading chatbots...</div>
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {bots.map((bot) => {
-          const channel = channelConfig[bot.channel];
+        {allBots.map((bot) => {
+          const channel = channelConfig[bot.channel] ?? channelConfig.web;
           const ChannelIcon = channel.icon;
 
           return (
@@ -161,7 +102,7 @@ export const CBChatbotManagement: React.FC = () => {
                           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-500 mt-0.5">{bot.description}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{bot.purpose ?? '—'}</p>
                     </div>
                   </div>
                   <DropdownMenu>
@@ -186,11 +127,8 @@ export const CBChatbotManagement: React.FC = () => {
                     <ChannelIcon className="w-3 h-3 mr-1" />
                     {channel.label}
                   </Badge>
-                  <Badge variant="outline" className="text-xs bg-violet-50 text-violet-700 border-violet-200">
-                    🤖 {bot.aiModel}
-                  </Badge>
                   <Badge variant="outline" className="text-xs bg-slate-50 text-slate-600 border-slate-200">
-                    🌐 {bot.languageCount} languages
+                    🌐 {bot.language}
                   </Badge>
                 </div>
 
@@ -201,7 +139,7 @@ export const CBChatbotManagement: React.FC = () => {
                     <p className="text-[10px] text-slate-500 uppercase tracking-wide">Conversations</p>
                   </div>
                   <div className="bg-slate-50 rounded-lg p-3 text-center">
-                    <p className="text-lg font-bold text-emerald-600">{bot.resolution}%</p>
+                    <p className="text-lg font-bold text-emerald-600">{bot.resolution_rate}%</p>
                     <p className="text-[10px] text-slate-500 uppercase tracking-wide">Resolution Rate</p>
                   </div>
                 </div>
@@ -211,7 +149,7 @@ export const CBChatbotManagement: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <Switch
                       checked={bot.status === 'live'}
-                      onCheckedChange={() => handleToggle(bot.id)}
+                      onCheckedChange={() => handleToggle(bot)}
                     />
                     <span className={`text-sm font-medium ${bot.status === 'live' ? 'text-emerald-600' : 'text-slate-500'}`}>
                       {bot.status === 'live' ? 'Live' : 'Paused'}
@@ -233,6 +171,7 @@ export const CBChatbotManagement: React.FC = () => {
           );
         })}
       </div>
+      )}
     </div>
   );
 };

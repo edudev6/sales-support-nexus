@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { motion } from "framer-motion";
 import { AlertCircle, ArrowUp, Clock, CheckCircle, User, Shield, AlertTriangle, Target } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,67 +6,50 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
-
-interface Escalation {
-  id: string;
-  issue: string;
-  source: "ticket" | "call" | "email" | "chat";
-  sourceId: string;
-  level: 1 | 2 | 3;
-  priority: "medium" | "high" | "critical";
-  status: "pending" | "in_progress" | "resolved";
-  assignedTo: string | null;
-  slaRemaining: number;
-  reason: string;
-  customer: string;
-  createdAt: string;
-  autoEscalated: boolean;
-}
+import { useEscalations, useTickets, useTeamMembers, useUpdateRow, relativeTime, memberName } from "@/hooks/useSalesSupportData";
 
 const EscalationsModule = () => {
-  const [escalations, setEscalations] = useState<Escalation[]>([
-    { id: "ESC-001", issue: "Service outage complaint", source: "call", sourceId: "CALL-003", level: 3, priority: "critical", status: "in_progress", assignedTo: "Manager: David Lee", slaRemaining: 15, reason: "Customer threatening legal action", customer: "Global Logistics", createdAt: "15 min ago", autoEscalated: false },
-    { id: "ESC-002", issue: "Invoice discrepancy - $50,000", source: "email", sourceId: "EM-001", level: 2, priority: "high", status: "pending", assignedTo: null, slaRemaining: 45, reason: "High value dispute", customer: "Tech Solutions Ltd", createdAt: "30 min ago", autoEscalated: true },
-    { id: "ESC-003", issue: "Integration failure", source: "ticket", sourceId: "TKT-001", level: 2, priority: "high", status: "in_progress", assignedTo: "Senior: Emma Davis", slaRemaining: 60, reason: "SLA breach risk", customer: "Healthcare Plus", createdAt: "1 hour ago", autoEscalated: true },
-    { id: "ESC-004", issue: "Feature urgency", source: "chat", sourceId: "CHAT-002", level: 1, priority: "medium", status: "resolved", assignedTo: "Sarah Chen", slaRemaining: 0, reason: "VIP customer request", customer: "Retail Mart", createdAt: "2 hours ago", autoEscalated: false },
-  ]);
+  const { data: escalationsData, isLoading } = useEscalations();
+  const { data: ticketsData } = useTickets();
+  const { data: members } = useTeamMembers();
+  const updateEscalation = useUpdateRow("support_escalations");
 
-  const handlers = {
-    1: ["Sarah Chen", "Mike Johnson", "Lisa Park"],
-    2: ["Senior: Emma Davis", "Senior: James Wilson"],
-    3: ["Manager: David Lee", "Director: Anna Smith"],
-  };
+  const escalations = escalationsData ?? [];
+  const tickets = ticketsData ?? [];
+  const handlers = members ?? [];
 
-  const handleAssign = (escalationId: string, handler: string) => {
+  const ticketFor = (id: string | null) => tickets.find(t => t.id === id);
+
+  const handleAssign = async (escalationId: string, handlerId: string) => {
     toast.loading("Assigning escalation...", { id: `assign-${escalationId}` });
-    setTimeout(() => {
-      setEscalations(escalations.map(e => e.id === escalationId ? { ...e, assignedTo: handler, status: "in_progress" } : e));
-      toast.success(`Assigned to ${handler}`, { id: `assign-${escalationId}` });
-    }, 500);
+    try {
+      await updateEscalation.mutateAsync({ id: escalationId, values: { assigned_to: handlerId, status: "in_progress" } });
+      toast.success(`Assigned to ${memberName(handlers, handlerId) ?? "handler"}`, { id: `assign-${escalationId}` });
+    } catch {
+      toast.error("Failed to assign", { id: `assign-${escalationId}` });
+    }
   };
 
-  const handleEscalateUp = (escalationId: string) => {
+  const handleEscalateUp = async (escalationId: string) => {
     const esc = escalations.find(e => e.id === escalationId);
     if (!esc || esc.level >= 3) return;
-    
     toast.loading("Escalating to next level...", { id: `escalate-${escalationId}` });
-    setTimeout(() => {
-      setEscalations(escalations.map(e => e.id === escalationId ? { 
-        ...e, 
-        level: (e.level + 1) as 1 | 2 | 3, 
-        priority: "critical",
-        assignedTo: null 
-      } : e));
-      toast.warning(`Escalated to Level ${(esc.level + 1)}`, { id: `escalate-${escalationId}` });
-    }, 600);
+    try {
+      await updateEscalation.mutateAsync({ id: escalationId, values: { level: esc.level + 1, assigned_to: null } });
+      toast.warning(`Escalated to Level ${esc.level + 1}`, { id: `escalate-${escalationId}` });
+    } catch {
+      toast.error("Failed to escalate", { id: `escalate-${escalationId}` });
+    }
   };
 
-  const handleResolve = (escalationId: string) => {
+  const handleResolve = async (escalationId: string) => {
     toast.loading("Resolving escalation...", { id: `resolve-${escalationId}` });
-    setTimeout(() => {
-      setEscalations(escalations.map(e => e.id === escalationId ? { ...e, status: "resolved", slaRemaining: 0 } : e));
+    try {
+      await updateEscalation.mutateAsync({ id: escalationId, values: { status: "resolved" } });
       toast.success("Escalation resolved", { id: `resolve-${escalationId}` });
-    }, 600);
+    } catch {
+      toast.error("Failed to resolve", { id: `resolve-${escalationId}` });
+    }
   };
 
   const getLevelColor = (level: number) => {
@@ -79,6 +61,8 @@ const EscalationsModule = () => {
     }
   };
 
+  const priorityFromLevel = (level: number) => (level >= 3 ? "critical" : level === 2 ? "high" : "medium");
+
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case "critical": return "bg-red-500/20 text-red-300";
@@ -88,7 +72,7 @@ const EscalationsModule = () => {
   };
 
   const pendingCount = escalations.filter(e => e.status === "pending").length;
-  const criticalCount = escalations.filter(e => e.priority === "critical" && e.status !== "resolved").length;
+  const criticalCount = escalations.filter(e => e.level >= 3 && e.status !== "resolved").length;
   const level3Count = escalations.filter(e => e.level === 3 && e.status !== "resolved").length;
 
   return (
@@ -139,78 +123,72 @@ const EscalationsModule = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {escalations.map((esc, index) => (
-              <motion.div
-                key={esc.id}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: index * 0.05 }}
-                className={`p-4 bg-slate-800/50 rounded-lg hover:bg-slate-800 transition-colors ${esc.priority === "critical" ? "border-l-4 border-red-500" : ""}`}
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono text-cyan-400 text-sm">{esc.id}</span>
-                    <Badge className={getLevelColor(esc.level)}>Level {esc.level}</Badge>
-                    <Badge className={getPriorityColor(esc.priority)}>{esc.priority}</Badge>
-                    <Badge variant="outline" className="text-slate-400">{esc.source.toUpperCase()}: {esc.sourceId}</Badge>
-                    {esc.autoEscalated && <Badge className="bg-purple-500/20 text-purple-300">Auto-Escalated</Badge>}
-                  </div>
-                  {esc.status !== "resolved" && (
-                    <div className="flex items-center gap-2">
-                      <Clock className={`w-4 h-4 ${esc.slaRemaining < 30 ? "text-red-400" : "text-amber-400"}`} />
-                      <span className={esc.slaRemaining < 30 ? "text-red-300" : "text-amber-300"}>{esc.slaRemaining} min SLA</span>
+            {isLoading && <p className="text-slate-400 text-sm">Loading escalations…</p>}
+            {!isLoading && escalations.length === 0 && <p className="text-slate-400 text-sm">No escalations.</p>}
+            {escalations.map((esc, index) => {
+              const priority = priorityFromLevel(esc.level);
+              const ticket = ticketFor(esc.ticket_id);
+              const assignedName = memberName(handlers, esc.assigned_to);
+              return (
+                <motion.div
+                  key={esc.id}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                  className={`p-4 bg-slate-800/50 rounded-lg hover:bg-slate-800 transition-colors ${priority === "critical" ? "border-l-4 border-red-500" : ""}`}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-cyan-400 text-sm">{esc.reference}</span>
+                      <Badge className={getLevelColor(esc.level)}>Level {esc.level}</Badge>
+                      <Badge className={getPriorityColor(priority)}>{priority}</Badge>
+                      {ticket && <Badge variant="outline" className="text-slate-400">TICKET: {ticket.reference}</Badge>}
                     </div>
-                  )}
-                </div>
+                  </div>
 
-                <div className="mb-3">
-                  <h4 className="font-medium text-slate-100">{esc.issue}</h4>
-                  <p className="text-sm text-slate-400">{esc.customer} • {esc.createdAt} • {esc.assignedTo || "Unassigned"}</p>
-                  <p className="text-sm text-amber-400/80 mt-1">Reason: {esc.reason}</p>
-                </div>
-
-                {esc.status !== "resolved" && (
                   <div className="mb-3">
-                    <Progress value={Math.max(0, 100 - (esc.slaRemaining / 120) * 100)} className="h-1" />
+                    <h4 className="font-medium text-slate-100">{ticket?.subject ?? esc.reason}</h4>
+                    <p className="text-sm text-slate-400">{ticket?.customer_name ?? "-"} • {relativeTime(esc.created_at)} • {assignedName || "Unassigned"}</p>
+                    <p className="text-sm text-amber-400/80 mt-1">Reason: {esc.reason}</p>
                   </div>
-                )}
 
-                <div className="flex items-center justify-between">
-                  <Badge className={esc.status === "resolved" ? "bg-emerald-500/20 text-emerald-300" : "bg-blue-500/20 text-blue-300"}>
-                    {esc.status.replace('_', ' ')}
-                  </Badge>
+                  <div className="flex items-center justify-between">
+                    <Badge className={esc.status === "resolved" ? "bg-emerald-500/20 text-emerald-300" : "bg-blue-500/20 text-blue-300"}>
+                      {esc.status.replace('_', ' ')}
+                    </Badge>
 
-                  <div className="flex items-center gap-2">
-                    {esc.status !== "resolved" && !esc.assignedTo && (
-                      <Select onValueChange={(handler) => handleAssign(esc.id, handler)}>
-                        <SelectTrigger className="w-40 bg-slate-700/50 border-slate-600">
-                          <SelectValue placeholder="Assign handler" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {handlers[esc.level].map(handler => (
-                            <SelectItem key={handler} value={handler}>{handler}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {esc.status !== "resolved" && !esc.assigned_to && (
+                        <Select onValueChange={(handler) => handleAssign(esc.id, handler)}>
+                          <SelectTrigger className="w-40 bg-slate-700/50 border-slate-600">
+                            <SelectValue placeholder="Assign handler" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {handlers.map(handler => (
+                              <SelectItem key={handler.id} value={handler.id}>{handler.full_name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
 
-                    {esc.status !== "resolved" && esc.level < 3 && (
-                      <Button size="sm" variant="outline" onClick={() => handleEscalateUp(esc.id)} className="border-red-500/30 text-red-300">
-                        <ArrowUp className="w-3 h-3 mr-1" />
-                        Level {esc.level + 1}
-                      </Button>
-                    )}
+                      {esc.status !== "resolved" && esc.level < 3 && (
+                        <Button size="sm" variant="outline" onClick={() => handleEscalateUp(esc.id)} className="border-red-500/30 text-red-300">
+                          <ArrowUp className="w-3 h-3 mr-1" />
+                          Level {esc.level + 1}
+                        </Button>
+                      )}
 
-                    {esc.status !== "resolved" && (
-                      <Button size="sm" onClick={() => handleResolve(esc.id)} className="bg-emerald-500 hover:bg-emerald-600">
-                        <CheckCircle className="w-3 h-3 mr-1" />
-                        Resolve
-                      </Button>
-                    )}
+                      {esc.status !== "resolved" && (
+                        <Button size="sm" onClick={() => handleResolve(esc.id)} className="bg-emerald-500 hover:bg-emerald-600">
+                          <CheckCircle className="w-3 h-3 mr-1" />
+                          Resolve
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </motion.div>
-            ))}
+                </motion.div>
+              );
+            })}
           </div>
         </CardContent>
       </Card>

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { 
-  Plus, 
+import {
+  Plus,
   Calendar,
   Clock,
   CheckCircle2,
@@ -12,7 +12,7 @@ import {
   Video,
   User,
   Bell,
-  Filter
+  Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,69 +34,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-const tasks = [
-  {
-    id: 1,
-    title: "Call Rajesh Mehta - Follow up on proposal",
-    type: "call",
-    priority: "high",
-    dueDate: "Today, 2:00 PM",
-    customer: "Tech Solutions Pvt Ltd",
-    completed: false,
-    overdue: false
-  },
-  {
-    id: 2,
-    title: "Send revised quotation to Anita",
-    type: "email",
-    priority: "high",
-    dueDate: "Today, 4:00 PM",
-    customer: "Digital Dreams Agency",
-    completed: false,
-    overdue: false
-  },
-  {
-    id: 3,
-    title: "Product demo with StartUp Hub",
-    type: "meeting",
-    priority: "medium",
-    dueDate: "Tomorrow, 11:00 AM",
-    customer: "StartUp Hub India",
-    completed: false,
-    overdue: false
-  },
-  {
-    id: 4,
-    title: "Contract review call",
-    type: "call",
-    priority: "low",
-    dueDate: "Jan 18, 10:00 AM",
-    customer: "Green Energy Corp",
-    completed: false,
-    overdue: false
-  },
-  {
-    id: 5,
-    title: "Send payment reminder",
-    type: "email",
-    priority: "high",
-    dueDate: "Yesterday",
-    customer: "Metro Industries",
-    completed: false,
-    overdue: true
-  },
-  {
-    id: 6,
-    title: "Initial discovery call completed",
-    type: "call",
-    priority: "medium",
-    dueDate: "Jan 12",
-    customer: "Alpha Corp",
-    completed: true,
-    overdue: false
-  },
-];
+import { toast } from "@/hooks/use-toast";
+import {
+  useTasks,
+  useCustomers,
+  useTeamMembers,
+  useInsertRow,
+  useUpdateRow,
+  useDeleteRow,
+  memberName,
+} from "@/hooks/useSalesSupportData";
 
 const getTypeIcon = (type: string) => {
   switch (type) {
@@ -107,26 +54,84 @@ const getTypeIcon = (type: string) => {
   }
 };
 
+const formatDue = (dueAt: string | null) => {
+  if (!dueAt) return "No due date";
+  const due = new Date(dueAt);
+  const now = new Date();
+  const isToday = due.toDateString() === now.toDateString();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  const isTomorrow = due.toDateString() === tomorrow.toDateString();
+  const time = due.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (isToday) return `Today, ${time}`;
+  if (isTomorrow) return `Tomorrow, ${time}`;
+  return due.toLocaleDateString([], { month: "short", day: "numeric" });
+};
+
 const TasksFollowups = () => {
+  const { data: tasks, isLoading } = useTasks();
+  const { data: customers } = useCustomers();
+  const { data: members } = useTeamMembers();
+  const insertTask = useInsertRow("crm_tasks");
+  const updateTask = useUpdateRow("crm_tasks");
+  const deleteTask = useDeleteRow("crm_tasks");
+
   const [filter, setFilter] = useState("all");
-  const [taskList, setTaskList] = useState(tasks);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [form, setForm] = useState({
+    title: "",
+    task_type: "call",
+    customer_id: "",
+    due_at: "",
+    priority: "medium",
+  });
 
-  const toggleTask = (taskId: number) => {
-    setTaskList(prev => prev.map(task => 
-      task.id === taskId ? { ...task, completed: !task.completed } : task
-    ));
-  };
+  const allTasks = tasks ?? [];
+  const customerName = (id: string | null) => (customers ?? []).find(c => c.id === id)?.company_name ?? memberName(members, id) ?? "—";
 
-  const filteredTasks = taskList.filter(task => {
-    if (filter === "pending") return !task.completed;
-    if (filter === "completed") return task.completed;
-    if (filter === "overdue") return task.overdue && !task.completed;
+  const isOverdue = (t: (typeof allTasks)[number]) => t.due_at ? new Date(t.due_at).getTime() < Date.now() && t.status !== "completed" : false;
+  const isCompleted = (t: (typeof allTasks)[number]) => t.status === "completed";
+
+  const filteredTasks = allTasks.filter(task => {
+    if (filter === "pending") return !isCompleted(task);
+    if (filter === "completed") return isCompleted(task);
+    if (filter === "overdue") return isOverdue(task);
     return true;
   });
 
-  const todayTasks = filteredTasks.filter(t => t.dueDate.includes("Today") && !t.completed);
-  const overdueTasks = filteredTasks.filter(t => t.overdue && !t.completed);
-  const completedTasks = filteredTasks.filter(t => t.completed);
+  const todayTasks = allTasks.filter(t => t.due_at && new Date(t.due_at).toDateString() === new Date().toDateString() && !isCompleted(t));
+  const overdueTasks = allTasks.filter(isOverdue);
+  const completedTasks = allTasks.filter(isCompleted);
+
+  const toggleTask = async (id: string, currentStatus: string) => {
+    try {
+      await updateTask.mutateAsync({ id, values: { status: currentStatus === "completed" ? "pending" : "completed" } });
+    } catch (err) {
+      toast({ title: "Update failed", description: String(err), variant: "destructive" });
+    }
+  };
+
+  const handleCreateTask = async () => {
+    if (!form.title) {
+      toast({ title: "Missing fields", description: "Task title is required.", variant: "destructive" });
+      return;
+    }
+    try {
+      await insertTask.mutateAsync({
+        title: form.title,
+        task_type: form.task_type,
+        customer_id: form.customer_id || null,
+        due_at: form.due_at || null,
+        priority: form.priority,
+        status: "pending",
+      });
+      toast({ title: "Task created", description: `${form.title} was added.` });
+      setForm({ title: "", task_type: "call", customer_id: "", due_at: "", priority: "medium" });
+      setDialogOpen(false);
+    } catch (err) {
+      toast({ title: "Failed to create task", description: String(err), variant: "destructive" });
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -136,7 +141,7 @@ const TasksFollowups = () => {
           <h1 className="text-2xl font-bold text-slate-800">Tasks & Follow-ups</h1>
           <p className="text-slate-500 mt-1">Stay on top of your activities</p>
         </div>
-        <Dialog>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button className="gap-2 bg-blue-500 hover:bg-blue-600" size="lg">
               <Plus className="w-5 h-5" />
@@ -150,11 +155,11 @@ const TasksFollowups = () => {
             <div className="space-y-4 mt-4">
               <div>
                 <Label>Task Title</Label>
-                <Input placeholder="Enter task description" className="mt-1" />
+                <Input placeholder="Enter task description" className="mt-1" value={form.title} onChange={(e) => setForm(f => ({ ...f, title: e.target.value }))} />
               </div>
               <div>
                 <Label>Type</Label>
-                <Select>
+                <Select value={form.task_type} onValueChange={(v) => setForm(f => ({ ...f, task_type: v }))}>
                   <SelectTrigger className="mt-1">
                     <SelectValue placeholder="Select type" />
                   </SelectTrigger>
@@ -168,15 +173,24 @@ const TasksFollowups = () => {
               </div>
               <div>
                 <Label>Customer</Label>
-                <Input placeholder="Select customer" className="mt-1" />
+                <Select value={form.customer_id} onValueChange={(v) => setForm(f => ({ ...f, customer_id: v }))}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Select customer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(customers ?? []).map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label>Due Date & Time</Label>
-                <Input type="datetime-local" className="mt-1" />
+                <Input type="datetime-local" className="mt-1" value={form.due_at} onChange={(e) => setForm(f => ({ ...f, due_at: e.target.value }))} />
               </div>
               <div>
                 <Label>Priority</Label>
-                <Select>
+                <Select value={form.priority} onValueChange={(v) => setForm(f => ({ ...f, priority: v }))}>
                   <SelectTrigger className="mt-1">
                     <SelectValue placeholder="Select priority" />
                   </SelectTrigger>
@@ -187,8 +201,8 @@ const TasksFollowups = () => {
                   </SelectContent>
                 </Select>
               </div>
-              <Button className="w-full bg-blue-500 hover:bg-blue-600" size="lg">
-                Create Task
+              <Button className="w-full bg-blue-500 hover:bg-blue-600" size="lg" onClick={handleCreateTask} disabled={insertTask.isPending}>
+                {insertTask.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create Task"}
               </Button>
             </div>
           </DialogContent>
@@ -204,7 +218,7 @@ const TasksFollowups = () => {
                 <Circle className="w-5 h-5 text-blue-600" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-slate-800">{taskList.length}</p>
+                <p className="text-2xl font-bold text-slate-800">{allTasks.length}</p>
                 <p className="text-sm text-slate-500">Total Tasks</p>
               </div>
             </div>
@@ -265,7 +279,7 @@ const TasksFollowups = () => {
             <p className="font-medium text-slate-800">You have {todayTasks.length} tasks due today</p>
             <p className="text-sm text-slate-600">Don't forget to complete your pending follow-ups</p>
           </div>
-          <Button variant="outline" className="border-blue-300 text-blue-600 hover:bg-blue-50">
+          <Button variant="outline" className="border-blue-300 text-blue-600 hover:bg-blue-50" onClick={() => setFilter("pending")}>
             View All
           </Button>
         </motion.div>
@@ -276,7 +290,7 @@ const TasksFollowups = () => {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="text-slate-800">
-              {filter === "all" ? "All Tasks" : 
+              {filter === "all" ? "All Tasks" :
                filter === "pending" ? "Pending Tasks" :
                filter === "completed" ? "Completed Tasks" : "Overdue Tasks"}
             </CardTitle>
@@ -294,69 +308,93 @@ const TasksFollowups = () => {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            {filteredTasks.map((task, index) => {
-              const TypeIcon = getTypeIcon(task.type);
-              return (
-                <motion.div
-                  key={task.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                  className={`flex items-center gap-4 p-4 rounded-xl transition-colors ${
-                    task.completed 
-                      ? 'bg-slate-50 opacity-60' 
-                      : task.overdue 
-                      ? 'bg-red-50 border border-red-200' 
-                      : 'bg-slate-50 hover:bg-slate-100'
-                  }`}
-                >
-                  <Checkbox 
-                    checked={task.completed}
-                    onCheckedChange={() => toggleTask(task.id)}
-                    className="w-5 h-5"
-                  />
+          {isLoading ? (
+            <p className="text-slate-500 text-sm py-6 text-center">Loading tasks...</p>
+          ) : filteredTasks.length === 0 ? (
+            <p className="text-slate-500 text-sm py-6 text-center">No tasks found.</p>
+          ) : (
+            <div className="space-y-3">
+              {filteredTasks.map((task, index) => {
+                const TypeIcon = getTypeIcon(task.task_type);
+                const completed = isCompleted(task);
+                const overdue = isOverdue(task);
+                return (
+                  <motion.div
+                    key={task.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                    className={`flex items-center gap-4 p-4 rounded-xl transition-colors ${
+                      completed
+                        ? 'bg-slate-50 opacity-60'
+                        : overdue
+                        ? 'bg-red-50 border border-red-200'
+                        : 'bg-slate-50 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Checkbox
+                      checked={completed}
+                      onCheckedChange={() => toggleTask(task.id, task.status)}
+                      className="w-5 h-5"
+                    />
 
-                  <div className={`p-2 rounded-lg ${
-                    task.type === 'call' ? 'bg-green-100' :
-                    task.type === 'email' ? 'bg-blue-100' : 'bg-purple-100'
-                  }`}>
-                    <TypeIcon className={`w-4 h-4 ${
-                      task.type === 'call' ? 'text-green-600' :
-                      task.type === 'email' ? 'text-blue-600' : 'text-purple-600'
-                    }`} />
-                  </div>
-
-                  <div className="flex-1">
-                    <p className={`font-medium ${task.completed ? 'line-through text-slate-400' : 'text-slate-800'}`}>
-                      {task.title}
-                    </p>
-                    <div className="flex items-center gap-3 mt-1 text-sm text-slate-500">
-                      <span className="flex items-center gap-1">
-                        <User className="w-3 h-3" />
-                        {task.customer}
-                      </span>
+                    <div className={`p-2 rounded-lg ${
+                      task.task_type === 'call' ? 'bg-green-100' :
+                      task.task_type === 'email' ? 'bg-blue-100' : 'bg-purple-100'
+                    }`}>
+                      <TypeIcon className={`w-4 h-4 ${
+                        task.task_type === 'call' ? 'text-green-600' :
+                        task.task_type === 'email' ? 'text-blue-600' : 'text-purple-600'
+                      }`} />
                     </div>
-                  </div>
 
-                  <Badge className={`${
-                    task.priority === 'high' ? 'bg-red-100 text-red-700' :
-                    task.priority === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                    'bg-slate-100 text-slate-600'
-                  }`}>
-                    {task.priority}
-                  </Badge>
+                    <div className="flex-1">
+                      <p className={`font-medium ${completed ? 'line-through text-slate-400' : 'text-slate-800'}`}>
+                        {task.title}
+                      </p>
+                      <div className="flex items-center gap-3 mt-1 text-sm text-slate-500">
+                        <span className="flex items-center gap-1">
+                          <User className="w-3 h-3" />
+                          {customerName(task.customer_id)}
+                        </span>
+                      </div>
+                    </div>
 
-                  <div className={`flex items-center gap-2 text-sm ${
-                    task.overdue && !task.completed ? 'text-red-600 font-medium' : 'text-slate-500'
-                  }`}>
-                    <Calendar className="w-4 h-4" />
-                    {task.dueDate}
-                  </div>
-                </motion.div>
-              );
-            })}
-          </div>
+                    <Badge className={`${
+                      task.priority === 'high' ? 'bg-red-100 text-red-700' :
+                      task.priority === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+                      'bg-slate-100 text-slate-600'
+                    }`}>
+                      {task.priority}
+                    </Badge>
+
+                    <div className={`flex items-center gap-2 text-sm ${
+                      overdue && !completed ? 'text-red-600 font-medium' : 'text-slate-500'
+                    }`}>
+                      <Calendar className="w-4 h-4" />
+                      {formatDue(task.due_at)}
+                    </div>
+
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-slate-400 hover:text-red-500"
+                      onClick={async () => {
+                        try {
+                          await deleteTask.mutateAsync(task.id);
+                          toast({ title: "Task removed" });
+                        } catch (err) {
+                          toast({ title: "Delete failed", description: String(err), variant: "destructive" });
+                        }
+                      }}
+                    >
+                      <Circle className="w-4 h-4" />
+                    </Button>
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

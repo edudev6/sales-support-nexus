@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Users, Edit, Eye, Ticket, History, Star, DollarSign, Phone, Mail, X } from "lucide-react";
+import { Users, Edit, Eye, Ticket, History, Star, DollarSign, Phone, Mail } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,37 +10,21 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
-
-interface Customer {
-  id: string;
-  company: string;
-  contact: string;
-  email: string;
-  phone: string;
-  totalPurchases: number;
-  ticketCount: number;
-  supportScore: number;
-  status: "active" | "churned" | "at_risk";
-  lastContact: string;
-  industry: string;
-}
+import { useCustomers, useUpdateRow, useInsertRow, relativeTime, currency, type CrmCustomer } from "@/hooks/useSalesSupportData";
 
 const CRMCustomersModule = () => {
-  const [customers, setCustomers] = useState<Customer[]>([
-    { id: "CUS-001", company: "Tech Solutions Ltd", contact: "John Davidson", email: "john@techsol.com", phone: "+1 555-0101", totalPurchases: 125000, ticketCount: 8, supportScore: 92, status: "active", lastContact: "2 days ago", industry: "Technology" },
-    { id: "CUS-002", company: "Healthcare Plus", contact: "Maria Santos", email: "maria@hcplus.com", phone: "+1 555-0102", totalPurchases: 89000, ticketCount: 3, supportScore: 98, status: "active", lastContact: "1 week ago", industry: "Healthcare" },
-    { id: "CUS-003", company: "Retail Mart", contact: "Lisa Patterson", email: "lisa@retailmart.com", phone: "+1 555-0103", totalPurchases: 45000, ticketCount: 12, supportScore: 65, status: "at_risk", lastContact: "3 weeks ago", industry: "Retail" },
-    { id: "CUS-004", company: "EduLearn Academy", contact: "Robert Kim", email: "robert@edulearn.com", phone: "+1 555-0104", totalPurchases: 67000, ticketCount: 5, supportScore: 85, status: "active", lastContact: "5 days ago", industry: "Education" },
-    { id: "CUS-005", company: "Global Logistics", contact: "James Turner", email: "james@globallog.com", phone: "+1 555-0105", totalPurchases: 23000, ticketCount: 18, supportScore: 42, status: "churned", lastContact: "2 months ago", industry: "Logistics" },
-  ]);
+  const { data: customersData, isLoading } = useCustomers();
+  const updateCustomer = useUpdateRow("crm_customers");
+  const insertTicket = useInsertRow("support_tickets");
+  const customers: CrmCustomer[] = customersData ?? [];
 
   const [searchTerm, setSearchTerm] = useState("");
   const [editDrawerOpen, setEditDrawerOpen] = useState(false);
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<CrmCustomer | null>(null);
 
   const handleEditProfile = (customerId: string) => {
-    const customer = customers.find(c => c.id === customerId);
+    const customer = customers.find((c) => c.id === customerId);
     if (customer) {
       setSelectedCustomer(customer);
       setEditDrawerOpen(true);
@@ -48,36 +32,56 @@ const CRMCustomersModule = () => {
   };
 
   const handleViewHistory = (customerId: string) => {
-    const customer = customers.find(c => c.id === customerId);
+    const customer = customers.find((c) => c.id === customerId);
     if (customer) {
       setSelectedCustomer(customer);
       setHistoryDrawerOpen(true);
     }
   };
 
-  const handleSaveProfile = () => {
-    if (selectedCustomer) {
-      setCustomers(customers.map(c => 
-        c.id === selectedCustomer.id ? selectedCustomer : c
-      ));
-      toast.success("Profile updated", { description: `${selectedCustomer.company} saved successfully` });
+  const handleSaveProfile = async () => {
+    if (!selectedCustomer) return;
+    try {
+      await updateCustomer.mutateAsync({
+        id: selectedCustomer.id,
+        values: {
+          company_name: selectedCustomer.company_name,
+          contact_name: selectedCustomer.contact_name,
+          email: selectedCustomer.email,
+          phone: selectedCustomer.phone,
+        },
+      });
+      toast.success("Profile updated", { description: `${selectedCustomer.company_name} saved successfully` });
       setEditDrawerOpen(false);
+    } catch (e) {
+      toast.error("Failed to update profile");
     }
   };
 
-  const handleRaiseTicket = (customerId: string) => {
-    toast.loading("Creating support ticket...", { id: `ticket-${customerId}` });
-    setTimeout(() => {
-      toast.success("Support ticket created", { id: `ticket-${customerId}`, description: "TKT-NEW assigned to queue" });
-    }, 600);
+  const handleRaiseTicket = async (customer: CrmCustomer) => {
+    toast.loading("Creating support ticket...", { id: `ticket-${customer.id}` });
+    try {
+      await insertTicket.mutateAsync({
+        reference: `TKT-${Date.now().toString().slice(-6)}`,
+        subject: "New request",
+        customer_id: customer.id,
+        customer_name: customer.company_name,
+        priority: "medium",
+        status: "new",
+        category: "General",
+      });
+      toast.success("Support ticket created", { id: `ticket-${customer.id}` });
+    } catch (e) {
+      toast.error("Failed to create ticket", { id: `ticket-${customer.id}` });
+    }
   };
 
-  const handleCall = (customerId: string, phone: string) => {
+  const handleCall = (phone: string) => {
     window.open(`tel:${phone}`, '_self');
     toast.info(`Initiating call to ${phone}`, { description: "Call center connecting..." });
   };
 
-  const handleEmail = (customerId: string, email: string) => {
+  const handleEmail = (email: string) => {
     window.open(`mailto:${email}`, '_blank');
     toast.info(`Opening email composer for ${email}`, { description: "Email client opened" });
   };
@@ -97,15 +101,15 @@ const CRMCustomersModule = () => {
     return "text-red-400";
   };
 
-  const filteredCustomers = customers.filter(c => 
-    c.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.contact.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  const filteredCustomers = customers.filter((c) =>
+    c.company_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    c.contact_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     c.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const totalRevenue = customers.reduce((sum, c) => sum + c.totalPurchases, 0);
-  const activeCustomers = customers.filter(c => c.status === "active").length;
-  const atRiskCount = customers.filter(c => c.status === "at_risk").length;
+  const totalRevenue = customers.reduce((sum, c) => sum + Number(c.lifetime_value ?? 0), 0);
+  const activeCustomers = customers.filter((c) => c.status === "active").length;
+  const atRiskCount = customers.filter((c) => c.status === "at_risk").length;
 
   return (
     <div className="space-y-6">
@@ -122,7 +126,6 @@ const CRMCustomersModule = () => {
         />
       </div>
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="bg-slate-900/50 border-cyan-500/20">
           <CardContent className="p-4 text-center">
@@ -154,67 +157,72 @@ const CRMCustomersModule = () => {
         </Card>
       </div>
 
-      {/* Customers List */}
       <Card className="bg-slate-900/50 border-cyan-500/20">
         <CardHeader>
           <CardTitle className="text-cyan-100">Customer Directory</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            {filteredCustomers.map((customer, index) => (
-              <motion.div
-                key={customer.id}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: index * 0.05 }}
-                className="p-4 bg-slate-800/50 rounded-lg hover:bg-slate-800 transition-colors"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <Avatar className="h-12 w-12">
-                      <AvatarFallback className="bg-cyan-500/20 text-cyan-300 text-lg">{customer.company.substring(0, 2).toUpperCase()}</AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-cyan-400 text-sm">{customer.id}</span>
-                        <span className="font-medium text-slate-100">{customer.company}</span>
-                        <Badge className={getStatusColor(customer.status)}>{customer.status.replace('_', ' ')}</Badge>
-                        <Badge variant="outline" className="text-slate-400">{customer.industry}</Badge>
-                      </div>
-                      <p className="text-sm text-slate-400">{customer.contact} • {customer.email} • {customer.phone}</p>
-                      <div className="flex items-center gap-4 mt-1 text-xs text-slate-500">
-                        <span>Purchases: ${customer.totalPurchases.toLocaleString()}</span>
-                        <span>Tickets: {customer.ticketCount}</span>
-                        <span className={getScoreColor(customer.supportScore)}>Score: {customer.supportScore}%</span>
-                        <span>Last: {customer.lastContact}</span>
+          {isLoading ? (
+            <div className="text-slate-400 text-sm py-6 text-center">Loading customers…</div>
+          ) : filteredCustomers.length === 0 ? (
+            <div className="text-slate-400 text-sm py-6 text-center">No customers found.</div>
+          ) : (
+            <div className="space-y-3">
+              {filteredCustomers.map((customer, index) => (
+                <motion.div
+                  key={customer.id}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                  className="p-4 bg-slate-800/50 rounded-lg hover:bg-slate-800 transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <Avatar className="h-12 w-12">
+                        <AvatarFallback className="bg-cyan-500/20 text-cyan-300 text-lg">{customer.company_name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-cyan-400 text-sm">{customer.id.slice(0, 8)}</span>
+                          <span className="font-medium text-slate-100">{customer.company_name}</span>
+                          <Badge className={getStatusColor(customer.status)}>{customer.status.replace('_', ' ')}</Badge>
+                          <Badge variant="outline" className="text-slate-400">{customer.industry ?? "—"}</Badge>
+                        </div>
+                        <p className="text-sm text-slate-400">{customer.contact_name} • {customer.email} • {customer.phone ?? "—"}</p>
+                        <div className="flex items-center gap-4 mt-1 text-xs text-slate-500">
+                          <span>Purchases: {currency(customer.lifetime_value)}</span>
+                          <span>Tickets: {customer.open_tickets}</span>
+                          <span className={getScoreColor(customer.health_score)}>Score: {customer.health_score}%</span>
+                          <span>Last: {relativeTime(customer.last_contact_at)}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center gap-2">
-                    <Button size="sm" variant="ghost" onClick={() => handleCall(customer.id, customer.phone)} className="text-cyan-400">
-                      <Phone className="w-4 h-4" />
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => handleEmail(customer.id, customer.email)} className="text-cyan-400">
-                      <Mail className="w-4 h-4" />
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => handleEditProfile(customer.id)} className="border-slate-600 text-slate-300">
-                      <Edit className="w-3 h-3 mr-1" />
-                      Edit
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => handleViewHistory(customer.id)} className="border-cyan-500/30 text-cyan-300">
-                      <Eye className="w-3 h-3 mr-1" />
-                      History
-                    </Button>
-                    <Button size="sm" onClick={() => handleRaiseTicket(customer.id)} className="bg-amber-500 hover:bg-amber-600">
-                      <Ticket className="w-3 h-3 mr-1" />
-                      Ticket
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" variant="ghost" onClick={() => handleCall(customer.phone ?? "")} className="text-cyan-400">
+                        <Phone className="w-4 h-4" />
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => handleEmail(customer.email)} className="text-cyan-400">
+                        <Mail className="w-4 h-4" />
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => handleEditProfile(customer.id)} className="border-slate-600 text-slate-300">
+                        <Edit className="w-3 h-3 mr-1" />
+                        Edit
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => handleViewHistory(customer.id)} className="border-cyan-500/30 text-cyan-300">
+                        <Eye className="w-3 h-3 mr-1" />
+                        History
+                      </Button>
+                      <Button size="sm" onClick={() => handleRaiseTicket(customer)} className="bg-amber-500 hover:bg-amber-600">
+                        <Ticket className="w-3 h-3 mr-1" />
+                        Ticket
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
+                </motion.div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -224,40 +232,40 @@ const CRMCustomersModule = () => {
           <SheetHeader>
             <SheetTitle className="text-cyan-100">Edit Customer Profile</SheetTitle>
             <SheetDescription className="text-slate-400">
-              Update customer information for {selectedCustomer?.company}
+              Update customer information for {selectedCustomer?.company_name}
             </SheetDescription>
           </SheetHeader>
           {selectedCustomer && (
             <div className="space-y-4 mt-6">
               <div className="space-y-2">
                 <Label className="text-slate-300">Company Name</Label>
-                <Input 
-                  value={selectedCustomer.company}
-                  onChange={(e) => setSelectedCustomer({...selectedCustomer, company: e.target.value})}
+                <Input
+                  value={selectedCustomer.company_name}
+                  onChange={(e) => setSelectedCustomer({ ...selectedCustomer, company_name: e.target.value })}
                   className="bg-slate-800 border-slate-600"
                 />
               </div>
               <div className="space-y-2">
                 <Label className="text-slate-300">Contact Person</Label>
-                <Input 
-                  value={selectedCustomer.contact}
-                  onChange={(e) => setSelectedCustomer({...selectedCustomer, contact: e.target.value})}
+                <Input
+                  value={selectedCustomer.contact_name}
+                  onChange={(e) => setSelectedCustomer({ ...selectedCustomer, contact_name: e.target.value })}
                   className="bg-slate-800 border-slate-600"
                 />
               </div>
               <div className="space-y-2">
                 <Label className="text-slate-300">Email</Label>
-                <Input 
+                <Input
                   value={selectedCustomer.email}
-                  onChange={(e) => setSelectedCustomer({...selectedCustomer, email: e.target.value})}
+                  onChange={(e) => setSelectedCustomer({ ...selectedCustomer, email: e.target.value })}
                   className="bg-slate-800 border-slate-600"
                 />
               </div>
               <div className="space-y-2">
                 <Label className="text-slate-300">Phone</Label>
-                <Input 
-                  value={selectedCustomer.phone}
-                  onChange={(e) => setSelectedCustomer({...selectedCustomer, phone: e.target.value})}
+                <Input
+                  value={selectedCustomer.phone ?? ""}
+                  onChange={(e) => setSelectedCustomer({ ...selectedCustomer, phone: e.target.value })}
                   className="bg-slate-800 border-slate-600"
                 />
               </div>
@@ -280,7 +288,7 @@ const CRMCustomersModule = () => {
           <SheetHeader>
             <SheetTitle className="text-cyan-100">Customer History</SheetTitle>
             <SheetDescription className="text-slate-400">
-              Purchase and ticket history for {selectedCustomer?.company}
+              Purchase and ticket history for {selectedCustomer?.company_name}
             </SheetDescription>
           </SheetHeader>
           {selectedCustomer && (
@@ -291,13 +299,13 @@ const CRMCustomersModule = () => {
                     <h4 className="text-cyan-300 font-medium mb-2">Summary</h4>
                     <div className="grid grid-cols-2 gap-2 text-sm">
                       <div className="text-slate-400">Total Purchases:</div>
-                      <div className="text-slate-100">${selectedCustomer.totalPurchases.toLocaleString()}</div>
+                      <div className="text-slate-100">{currency(selectedCustomer.lifetime_value)}</div>
                       <div className="text-slate-400">Support Tickets:</div>
-                      <div className="text-slate-100">{selectedCustomer.ticketCount}</div>
+                      <div className="text-slate-100">{selectedCustomer.open_tickets}</div>
                       <div className="text-slate-400">Support Score:</div>
-                      <div className="text-slate-100">{selectedCustomer.supportScore}%</div>
+                      <div className="text-slate-100">{selectedCustomer.health_score}%</div>
                       <div className="text-slate-400">Last Contact:</div>
-                      <div className="text-slate-100">{selectedCustomer.lastContact}</div>
+                      <div className="text-slate-100">{relativeTime(selectedCustomer.last_contact_at)}</div>
                     </div>
                   </CardContent>
                 </Card>
@@ -305,9 +313,9 @@ const CRMCustomersModule = () => {
                   <CardContent className="p-4">
                     <h4 className="text-cyan-300 font-medium mb-2">Recent Activity</h4>
                     <div className="space-y-2 text-sm text-slate-400">
-                      <p>• Last purchase: 2 weeks ago</p>
-                      <p>• Support ticket opened: {selectedCustomer.lastContact}</p>
-                      <p>• Contract renewed: 3 months ago</p>
+                      <p>• Plan: {selectedCustomer.plan}</p>
+                      <p>• Support ticket opened: {relativeTime(selectedCustomer.last_contact_at)}</p>
+                      <p>• Customer since: {relativeTime(selectedCustomer.created_at)}</p>
                     </div>
                   </CardContent>
                 </Card>

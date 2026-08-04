@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Send, Link, Eye, Clock, Copy, ExternalLink, CheckCircle, AlertCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -5,29 +6,116 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "sonner";
+import {
+  useLeads,
+  useTasks,
+  useUpdateRow,
+  useInsertRow,
+  relativeTime,
+} from "@/hooks/useSalesSupportData";
+
+const getStatusBadge = (status: string) => {
+  switch (status) {
+    case "completed":
+    case "viewed":
+      return "bg-emerald-500/20 text-emerald-300 border-emerald-500/30";
+    case "pending":
+      return "bg-amber-500/20 text-amber-300 border-amber-500/30";
+    case "cancelled":
+    case "expired":
+      return "bg-red-500/20 text-red-300 border-red-500/30";
+    default:
+      return "bg-slate-500/20 text-slate-300";
+  }
+};
 
 const DemoDispatchCenter = () => {
-  const recentDemos = [
-    { id: "DM-001", lead: "Tech Solutions Ltd", product: "POS System", status: "viewed", views: 3, sent: "2 hours ago" },
-    { id: "DM-002", lead: "Healthcare Plus", product: "Hospital Suite", status: "pending", views: 0, sent: "30 min ago" },
-    { id: "DM-003", lead: "EduLearn Academy", product: "School ERP", status: "expired", views: 1, sent: "3 days ago" },
-    { id: "DM-004", lead: "Retail Mart", product: "Inventory Pro", status: "viewed", views: 5, sent: "1 day ago" },
-  ];
+  const { data: leads = [] } = useLeads();
+  const { data: tasks = [] } = useTasks();
+  const updateTask = useUpdateRow("crm_tasks");
+  const insertTask = useInsertRow("crm_tasks");
 
-  const suggestedDemos = [
-    { product: "Restaurant POS", match: 95, category: "Hospitality" },
-    { product: "Clinic Manager", match: 88, category: "Healthcare" },
-    { product: "School ERP", match: 82, category: "Education" },
-  ];
+  const [product, setProduct] = useState("");
+  const [leadName, setLeadName] = useState("");
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "viewed": return "bg-emerald-500/20 text-emerald-300 border-emerald-500/30";
-      case "pending": return "bg-amber-500/20 text-amber-300 border-amber-500/30";
-      case "expired": return "bg-red-500/20 text-red-300 border-red-500/30";
-      default: return "bg-slate-500/20 text-slate-300";
+  const demoLeads = useMemo(() => leads.filter((l) => l.source === "demo_request"), [leads]);
+  const demoTasks = useMemo(() => tasks.filter((t) => t.task_type === "meeting"), [tasks]);
+
+  const recentDemos = useMemo(() => {
+    return demoTasks.slice(0, 10).map((t) => {
+      const lead = leads.find((l) => l.id === t.lead_id);
+      return {
+        id: t.id,
+        reference: t.id.slice(0, 8).toUpperCase(),
+        lead: lead?.company ?? t.title,
+        product: t.description || "Product Demo",
+        status: t.status,
+        sent: relativeTime(t.created_at),
+      };
+    });
+  }, [demoTasks, leads]);
+
+  const totalDemos = demoTasks.length;
+  const completed = demoTasks.filter((t) => t.status === "completed").length;
+  const pending = demoTasks.filter((t) => t.status === "pending" || t.status === "scheduled").length;
+  const viewRate = totalDemos > 0 ? Math.round((completed / totalDemos) * 100) : 0;
+  const conversionRate = demoLeads.length > 0
+    ? Math.round((demoLeads.filter((l) => l.stage?.toLowerCase().includes("closed") && l.stage?.toLowerCase().includes("won")).length / demoLeads.length) * 100)
+    : 0;
+  const staleDemos = demoTasks.filter((t) => {
+    if (t.status === "completed" || !t.due_at) return false;
+    const hours = (Date.now() - new Date(t.due_at).getTime()) / (1000 * 60 * 60);
+    return hours > 48;
+  });
+
+  const handleGenerate = async () => {
+    if (!product || !leadName) {
+      toast.error("Select a product and enter a lead name first.");
+      return;
+    }
+    const lead = leads.find((l) => l.company.toLowerCase() === leadName.toLowerCase());
+    try {
+      await insertTask.mutateAsync({
+        title: `Demo: ${product}`,
+        description: product,
+        task_type: "meeting",
+        status: "pending",
+        priority: "medium",
+        lead_id: lead?.id ?? null,
+        due_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      });
+      toast.success("Demo link generated and dispatch scheduled");
+      setProduct("");
+      setLeadName("");
+    } catch {
+      toast.error("Failed to generate demo link");
     }
   };
+
+  const handleRemind = async (id: string) => {
+    try {
+      await updateTask.mutateAsync({ id, values: { status: "pending", due_at: new Date().toISOString() } });
+      toast.success("Reminder sent");
+    } catch {
+      toast.error("Failed to send reminder");
+    }
+  };
+
+  const handleBulkRemind = async () => {
+    try {
+      await Promise.all(
+        staleDemos.map((t) => updateTask.mutateAsync({ id: t.id, values: { due_at: new Date().toISOString() } })),
+      );
+      toast.success(`Reminder sent for ${staleDemos.length} demo${staleDemos.length === 1 ? "" : "s"}`);
+    } catch {
+      toast.error("Failed to send bulk reminders");
+    }
+  };
+
+  const generatedLink = product && leadName
+    ? `https://demo.softwarevala.com/${product}?lead=${leadName.toLowerCase().replace(/\s+/g, "-")}`
+    : "https://demo.softwarevala.com/select-product-and-lead";
 
   return (
     <div className="space-y-6">
@@ -36,7 +124,7 @@ const DemoDispatchCenter = () => {
           <h2 className="text-2xl font-bold text-cyan-100">Demo Dispatch Center</h2>
           <p className="text-slate-400">One-click demo sharing with tracking</p>
         </div>
-        <Button className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white">
+        <Button className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white" onClick={handleGenerate}>
           <Send className="w-4 h-4 mr-2" />
           Send New Demo
         </Button>
@@ -46,28 +134,28 @@ const DemoDispatchCenter = () => {
         <Card className="bg-slate-900/50 border-cyan-500/20">
           <CardContent className="p-4 text-center">
             <Send className="w-8 h-8 text-cyan-400 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-cyan-100">156</div>
+            <div className="text-2xl font-bold text-cyan-100">{totalDemos}</div>
             <div className="text-xs text-slate-400">Demos Sent</div>
           </CardContent>
         </Card>
         <Card className="bg-slate-900/50 border-emerald-500/20">
           <CardContent className="p-4 text-center">
             <Eye className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-emerald-100">89%</div>
+            <div className="text-2xl font-bold text-emerald-100">{viewRate}%</div>
             <div className="text-xs text-slate-400">View Rate</div>
           </CardContent>
         </Card>
         <Card className="bg-slate-900/50 border-amber-500/20">
           <CardContent className="p-4 text-center">
             <Clock className="w-8 h-8 text-amber-400 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-amber-100">4.2 min</div>
-            <div className="text-xs text-slate-400">Avg. View Time</div>
+            <div className="text-2xl font-bold text-amber-100">{pending}</div>
+            <div className="text-xs text-slate-400">Pending Demos</div>
           </CardContent>
         </Card>
         <Card className="bg-slate-900/50 border-purple-500/20">
           <CardContent className="p-4 text-center">
             <CheckCircle className="w-8 h-8 text-purple-400 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-purple-100">34%</div>
+            <div className="text-2xl font-bold text-purple-100">{conversionRate}%</div>
             <div className="text-xs text-slate-400">Conversion Rate</div>
           </CardContent>
         </Card>
@@ -86,42 +174,59 @@ const DemoDispatchCenter = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm text-slate-400 mb-2 block">Select Product</label>
-                  <Select>
+                  <Select value={product} onValueChange={setProduct}>
                     <SelectTrigger className="bg-slate-800 border-slate-700">
                       <SelectValue placeholder="Choose product..." />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="pos">POS System</SelectItem>
-                      <SelectItem value="hospital">Hospital Management</SelectItem>
-                      <SelectItem value="school">School ERP</SelectItem>
-                      <SelectItem value="inventory">Inventory Pro</SelectItem>
+                      <SelectItem value="pos-system">POS System</SelectItem>
+                      <SelectItem value="hospital-management">Hospital Management</SelectItem>
+                      <SelectItem value="school-erp">School ERP</SelectItem>
+                      <SelectItem value="inventory-pro">Inventory Pro</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
                   <label className="text-sm text-slate-400 mb-2 block">Lead Name</label>
-                  <Input placeholder="Enter lead name..." className="bg-slate-800 border-slate-700" />
+                  <Input
+                    placeholder="Enter lead name..."
+                    className="bg-slate-800 border-slate-700"
+                    value={leadName}
+                    onChange={(e) => setLeadName(e.target.value)}
+                    list="demo-lead-companies"
+                  />
+                  <datalist id="demo-lead-companies">
+                    {demoLeads.map((l) => (
+                      <option key={l.id} value={l.company} />
+                    ))}
+                  </datalist>
                 </div>
               </div>
-              
+
               <div className="p-4 bg-slate-800/50 rounded-lg">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm text-slate-400">Generated Link</span>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="ghost" className="text-cyan-400">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-cyan-400"
+                      onClick={() => {
+                        navigator.clipboard.writeText(generatedLink);
+                        toast.success("Link copied to clipboard");
+                      }}
+                    >
                       <Copy className="w-4 h-4" />
                     </Button>
-                    <Button size="sm" variant="ghost" className="text-cyan-400">
+                    <Button size="sm" variant="ghost" className="text-cyan-400" onClick={() => window.open(generatedLink, "_blank")}>
                       <ExternalLink className="w-4 h-4" />
                     </Button>
                   </div>
                 </div>
-                <code className="text-cyan-300 text-sm break-all">
-                  https://demo.softwarevala.com/pos-system?ref=sarah-chen&lead=tech-solutions
-                </code>
+                <code className="text-cyan-300 text-sm break-all">{generatedLink}</code>
               </div>
 
-              <Button className="w-full bg-cyan-500 hover:bg-cyan-600 text-white">
+              <Button className="w-full bg-cyan-500 hover:bg-cyan-600 text-white" onClick={handleGenerate}>
                 <Send className="w-4 h-4 mr-2" />
                 Generate & Send Demo Link
               </Button>
@@ -134,6 +239,9 @@ const DemoDispatchCenter = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
+                {recentDemos.length === 0 && (
+                  <p className="text-sm text-slate-500">No demo activity yet.</p>
+                )}
                 {recentDemos.map((demo, index) => (
                   <motion.div
                     key={demo.id}
@@ -143,7 +251,7 @@ const DemoDispatchCenter = () => {
                     className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg"
                   >
                     <div className="flex items-center gap-3">
-                      <span className="font-mono text-cyan-400 text-sm">{demo.id}</span>
+                      <span className="font-mono text-cyan-400 text-sm">{demo.reference}</span>
                       <div>
                         <p className="text-cyan-100 font-medium">{demo.lead}</p>
                         <p className="text-xs text-slate-400">{demo.product}</p>
@@ -152,10 +260,10 @@ const DemoDispatchCenter = () => {
                     <div className="flex items-center gap-4">
                       <div className="text-right">
                         <Badge className={getStatusBadge(demo.status)}>{demo.status}</Badge>
-                        <p className="text-xs text-slate-500 mt-1">{demo.views} views • {demo.sent}</p>
+                        <p className="text-xs text-slate-500 mt-1">{demo.sent}</p>
                       </div>
-                      {demo.status === "pending" && (
-                        <Button size="sm" variant="outline" className="border-amber-500/30 text-amber-300">
+                      {(demo.status === "pending" || demo.status === "scheduled") && (
+                        <Button size="sm" variant="outline" className="border-amber-500/30 text-amber-300" onClick={() => handleRemind(demo.id)}>
                           Remind
                         </Button>
                       )}
@@ -170,22 +278,26 @@ const DemoDispatchCenter = () => {
         <div className="space-y-6">
           <Card className="bg-slate-900/50 border-cyan-500/20">
             <CardHeader>
-              <CardTitle className="text-cyan-100 text-lg">AI Suggestions</CardTitle>
+              <CardTitle className="text-cyan-100 text-lg">Open Demo Requests</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {suggestedDemos.map((demo, index) => (
+              {demoLeads.length === 0 && (
+                <p className="text-sm text-slate-500">No demo requests yet.</p>
+              )}
+              {demoLeads.slice(0, 5).map((lead, index) => (
                 <motion.div
-                  key={demo.product}
+                  key={lead.id}
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: index * 0.1 }}
                   className="p-3 bg-slate-800/50 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+                  onClick={() => setLeadName(lead.company)}
                 >
                   <div className="flex items-center justify-between mb-1">
-                    <span className="font-medium text-cyan-100">{demo.product}</span>
-                    <Badge className="bg-emerald-500/20 text-emerald-300">{demo.match}% match</Badge>
+                    <span className="font-medium text-cyan-100">{lead.company}</span>
+                    <Badge className="bg-emerald-500/20 text-emerald-300">{Math.round(lead.ai_win_probability * 100)}% match</Badge>
                   </div>
-                  <span className="text-xs text-slate-400">{demo.category}</span>
+                  <span className="text-xs text-slate-400">{lead.category ?? lead.stage}</span>
                 </motion.div>
               ))}
             </CardContent>
@@ -197,8 +309,8 @@ const DemoDispatchCenter = () => {
                 <AlertCircle className="w-5 h-5 text-amber-400" />
                 <span className="font-medium text-amber-100">Follow-Up Required</span>
               </div>
-              <p className="text-sm text-slate-300 mb-3">3 demos haven't been viewed in 48+ hours</p>
-              <Button size="sm" className="w-full bg-amber-500 hover:bg-amber-600 text-white">
+              <p className="text-sm text-slate-300 mb-3">{staleDemos.length} demos haven't been viewed in 48+ hours</p>
+              <Button size="sm" className="w-full bg-amber-500 hover:bg-amber-600 text-white" onClick={handleBulkRemind} disabled={staleDemos.length === 0}>
                 Send Bulk Reminder
               </Button>
             </CardContent>

@@ -15,108 +15,47 @@ import {
   Shield
 } from 'lucide-react';
 import { toast } from 'sonner';
-
-interface AssignedLead {
-  id: string;
-  leadId: string;
-  customerName: string;
-  contactPhone: string;
-  contactEmail: string;
-  source: string;
-  region: string;
-  priority: 'high' | 'medium' | 'low';
-  assignedAt: string;
-  slaDeadline: string;
-  assignedTo?: string;
-  status: 'new' | 'assigned';
-}
-
-const mockLeads: AssignedLead[] = [
-  {
-    id: '1',
-    leadId: 'LD-2024-4521',
-    customerName: 'Rajesh Kumar',
-    contactPhone: '+91-98XXX-XXXXX',
-    contactEmail: 'r***@company.com',
-    source: 'Website Inquiry',
-    region: 'North',
-    priority: 'high',
-    assignedAt: '2024-01-15T09:30:00Z',
-    slaDeadline: '2024-01-15T13:30:00Z',
-    status: 'new'
-  },
-  {
-    id: '2',
-    leadId: 'LD-2024-4522',
-    customerName: 'Priya Sharma',
-    contactPhone: '+91-87XXX-XXXXX',
-    contactEmail: 'p***@business.com',
-    source: 'Referral',
-    region: 'West',
-    priority: 'medium',
-    assignedAt: '2024-01-15T08:15:00Z',
-    slaDeadline: '2024-01-15T16:15:00Z',
-    status: 'new'
-  },
-  {
-    id: '3',
-    leadId: 'LD-2024-4523',
-    customerName: 'Amit Patel',
-    contactPhone: '+91-76XXX-XXXXX',
-    contactEmail: 'a***@enterprise.com',
-    source: 'Campaign',
-    region: 'South',
-    priority: 'high',
-    assignedAt: '2024-01-15T07:00:00Z',
-    slaDeadline: '2024-01-15T11:00:00Z',
-    status: 'assigned',
-    assignedTo: 'VL-SE-001'
-  }
-];
-
-const salesExecs = [
-  { id: 'VL-SE-001', name: 'Sales Exec 1', activeLeads: 5 },
-  { id: 'VL-SE-002', name: 'Sales Exec 2', activeLeads: 3 },
-  { id: 'VL-SE-003', name: 'Sales Exec 3', activeLeads: 7 },
-];
+import { useLeads, useTeamMembers, useUpdateRow, relativeTime } from '@/hooks/useSalesSupportData';
 
 export const SSMAssignedLeads: React.FC = () => {
-  const [leads, setLeads] = useState<AssignedLead[]>(mockLeads);
+  const { data: leads, isLoading } = useLeads();
+  const { data: salesExecs } = useTeamMembers('sales');
+  const updateLead = useUpdateRow('sales_leads');
   const [selectedLead, setSelectedLead] = useState<string | null>(null);
 
-  const handleAssignLead = (leadId: string, execId: string) => {
-    setLeads(prev => 
-      prev.map(lead => 
-        lead.id === leadId 
-          ? { ...lead, status: 'assigned' as const, assignedTo: execId }
-          : lead
-      )
-    );
-    toast.success(`Lead assigned to ${execId}`);
+  const handleAssignLead = async (leadId: string, execId: string) => {
+    try {
+      await updateLead.mutateAsync({ id: leadId, values: { assigned_to: execId, stage: 'assigned' } });
+      toast.success(`Lead assigned to ${execId}`);
+    } catch (e) {
+      toast.error('Failed to assign lead');
+    }
     setSelectedLead(null);
   };
 
   const getPriorityBadge = (priority: string) => {
-    const colors = {
+    const colors: Record<string, string> = {
       high: 'bg-red-500/10 text-red-500 border-red-500/30',
       medium: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/30',
       low: 'bg-blue-500/10 text-blue-500 border-blue-500/30'
     };
-    return <Badge className={colors[priority as keyof typeof colors]}>{priority.toUpperCase()}</Badge>;
+    return <Badge className={colors[priority] || colors.low}>{(priority || 'low').toUpperCase()}</Badge>;
   };
 
-  const getSLAStatus = (deadline: string) => {
+  const getSLAStatus = (createdAt: string) => {
     const now = new Date();
-    const sla = new Date(deadline);
-    const hoursLeft = (sla.getTime() - now.getTime()) / (1000 * 60 * 60);
-    
+    const created = new Date(createdAt);
+    const hoursElapsed = (now.getTime() - created.getTime()) / (1000 * 60 * 60);
+    const hoursLeft = 4 - hoursElapsed;
+
     if (hoursLeft < 0) return { label: 'BREACHED', color: 'text-red-500 bg-red-500/10' };
     if (hoursLeft < 1) return { label: `${Math.round(hoursLeft * 60)}m left`, color: 'text-red-500 bg-red-500/10' };
     if (hoursLeft < 4) return { label: `${hoursLeft.toFixed(1)}h left`, color: 'text-yellow-500 bg-yellow-500/10' };
     return { label: `${hoursLeft.toFixed(1)}h left`, color: 'text-green-500 bg-green-500/10' };
   };
 
-  const newLeads = leads.filter(l => l.status === 'new');
+  const allLeads = leads ?? [];
+  const newLeads = allLeads.filter(l => !l.assigned_to);
 
   return (
     <Card className="bg-card border-border">
@@ -141,9 +80,12 @@ export const SSMAssignedLeads: React.FC = () => {
         </p>
       </CardHeader>
       <CardContent className="p-4">
+        {isLoading ? (
+          <div className="text-center py-8 text-muted-foreground">Loading leads...</div>
+        ) : (
         <div className="space-y-4">
-          {leads.map((lead) => {
-            const slaStatus = getSLAStatus(lead.slaDeadline);
+          {allLeads.map((lead) => {
+            const slaStatus = getSLAStatus(lead.created_at);
             
             return (
               <motion.div
@@ -155,13 +97,13 @@ export const SSMAssignedLeads: React.FC = () => {
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="font-mono text-sm text-primary">{lead.leadId}</span>
-                      {getPriorityBadge(lead.priority)}
-                      <Badge variant={lead.status === 'assigned' ? 'default' : 'secondary'}>
-                        {lead.status === 'assigned' ? `→ ${lead.assignedTo}` : 'Unassigned'}
+                      <span className="font-mono text-sm text-primary">{lead.reference}</span>
+                      {getPriorityBadge(lead.urgency)}
+                      <Badge variant={lead.assigned_to ? 'default' : 'secondary'}>
+                        {lead.assigned_to ? `→ ${lead.assigned_to}` : 'Unassigned'}
                       </Badge>
                     </div>
-                    <h4 className="font-semibold text-foreground">{lead.customerName}</h4>
+                    <h4 className="font-semibold text-foreground">{lead.contact_name}</h4>
                     <p className="text-sm text-muted-foreground">{lead.source}</p>
                   </div>
                   <Badge className={`${slaStatus.color} font-mono`}>
@@ -173,28 +115,28 @@ export const SSMAssignedLeads: React.FC = () => {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-sm">
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Phone className="h-3 w-3" />
-                    <span>{lead.contactPhone}</span>
+                    <span>{lead.phone || '—'}</span>
                   </div>
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Mail className="h-3 w-3" />
-                    <span>{lead.contactEmail}</span>
+                    <span>{lead.email || '—'}</span>
                   </div>
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <MapPin className="h-3 w-3" />
-                    <span>{lead.region} Region</span>
+                    <span>{lead.company}</span>
                   </div>
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Clock className="h-3 w-3" />
-                    <span>{new Date(lead.assignedAt).toLocaleTimeString()}</span>
+                    <span>{relativeTime(lead.created_at)}</span>
                   </div>
                 </div>
 
-                {lead.status === 'new' && (
+                {!lead.assigned_to && (
                   selectedLead === lead.id ? (
                     <div className="border-t border-border pt-3">
                       <p className="text-sm font-medium text-foreground mb-2">Assign to Sales Executive:</p>
                       <div className="flex flex-wrap gap-2">
-                        {salesExecs.map((exec) => (
+                        {(salesExecs ?? []).map((exec) => (
                           <Button
                             key={exec.id}
                             size="sm"
@@ -203,9 +145,9 @@ export const SSMAssignedLeads: React.FC = () => {
                             className="flex items-center gap-2"
                           >
                             <User className="h-3 w-3" />
-                            {exec.id}
+                            {exec.full_name}
                             <Badge variant="secondary" className="text-xs">
-                              {exec.activeLeads} leads
+                              {exec.leads_handled} leads
                             </Badge>
                           </Button>
                         ))}
@@ -232,8 +174,9 @@ export const SSMAssignedLeads: React.FC = () => {
             );
           })}
         </div>
+        )}
 
-        {leads.length === 0 && (
+        {!isLoading && allLeads.length === 0 && (
           <div className="text-center py-8 text-muted-foreground">
             <UserPlus className="h-12 w-12 mx-auto mb-2 opacity-30" />
             <p>No new leads to assign</p>

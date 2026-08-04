@@ -3,21 +3,23 @@ import { Wallet, DollarSign, TrendingUp, Award, Calendar, Target, CheckCircle, C
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { useCommissions, useTeamMembers, memberName, currency } from "@/hooks/useSalesSupportData";
 
 const CommissionBoard = () => {
-  const commissions = [
-    { id: "COM-001", deal: "Tech Solutions Ltd", amount: 1250, status: "paid", date: "Dec 15, 2024" },
-    { id: "COM-002", deal: "Healthcare Plus", amount: 890, status: "pending", date: "Dec 18, 2024" },
-    { id: "COM-003", deal: "EduLearn Academy", amount: 650, status: "processing", date: "Dec 19, 2024" },
-    { id: "COM-004", deal: "Retail Mart", amount: 1100, status: "paid", date: "Dec 12, 2024" },
-  ];
+  const { data: commissionsData, isLoading } = useCommissions();
+  const { data: members } = useTeamMembers();
 
-  const milestones = [
-    { name: "5 Sales", reward: "$250 Bonus", progress: 100, achieved: true },
-    { name: "10 Sales", reward: "$600 Bonus", progress: 80, achieved: false },
-    { name: "$50K Revenue", reward: "1% Extra Commission", progress: 72, achieved: false },
-    { name: "Top Performer", reward: "VIP Status + $1000", progress: 45, achieved: false },
-  ];
+  const commissions = commissionsData ?? [];
+  const team = members ?? [];
+
+  const totalEarned = commissions.reduce((sum, c) => sum + Number(c.earned ?? 0), 0);
+  const totalPending = commissions
+    .filter(c => c.status === "pending" || c.status === "processing")
+    .reduce((sum, c) => sum + (Number(c.earned ?? 0) - Number(c.paid ?? 0)), 0);
+  const totalDeals = commissions.reduce((sum, c) => sum + (c.deals_closed ?? 0), 0);
+  const avgRate = commissions.length
+    ? (commissions.reduce((sum, c) => sum + Number(c.commission_rate ?? 0), 0) / commissions.length)
+    : 0;
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -28,6 +30,17 @@ const CommissionBoard = () => {
     }
   };
 
+  const milestones = [
+    { name: "5 Sales", reward: "$250 Bonus", target: 5 },
+    { name: "10 Sales", reward: "$600 Bonus", target: 10 },
+    { name: "20 Sales", reward: "1% Extra Commission", target: 20 },
+    { name: "40 Sales", reward: "VIP Status + $1000", target: 40 },
+  ].map(m => ({
+    ...m,
+    progress: Math.min(100, Math.round((totalDeals / m.target) * 100)),
+    achieved: totalDeals >= m.target,
+  }));
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -35,10 +48,6 @@ const CommissionBoard = () => {
           <h2 className="text-2xl font-bold text-cyan-100">Commission Board</h2>
           <p className="text-slate-400">Track earnings, payouts, and incentive milestones</p>
         </div>
-        <Badge className="bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 text-emerald-300 border border-emerald-500/30 px-4 py-2">
-          <TrendingUp className="w-4 h-4 mr-2" />
-          +15% This Month
-        </Badge>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -49,7 +58,7 @@ const CommissionBoard = () => {
                 <DollarSign className="w-6 h-6 text-emerald-400" />
               </div>
               <div>
-                <div className="text-2xl font-bold text-emerald-100">$4,890</div>
+                <div className="text-2xl font-bold text-emerald-100">{currency(totalEarned)}</div>
                 <div className="text-xs text-slate-400">Total Earned</div>
               </div>
             </div>
@@ -62,7 +71,7 @@ const CommissionBoard = () => {
                 <Wallet className="w-6 h-6 text-cyan-400" />
               </div>
               <div>
-                <div className="text-2xl font-bold text-cyan-100">$1,540</div>
+                <div className="text-2xl font-bold text-cyan-100">{currency(totalPending)}</div>
                 <div className="text-xs text-slate-400">Pending Payout</div>
               </div>
             </div>
@@ -75,8 +84,8 @@ const CommissionBoard = () => {
                 <Calendar className="w-6 h-6 text-amber-400" />
               </div>
               <div>
-                <div className="text-2xl font-bold text-amber-100">Dec 25</div>
-                <div className="text-xs text-slate-400">Next Payout</div>
+                <div className="text-2xl font-bold text-amber-100">{totalDeals}</div>
+                <div className="text-xs text-slate-400">Deals Closed</div>
               </div>
             </div>
           </CardContent>
@@ -88,8 +97,8 @@ const CommissionBoard = () => {
                 <Target className="w-6 h-6 text-purple-400" />
               </div>
               <div>
-                <div className="text-2xl font-bold text-purple-100">8%</div>
-                <div className="text-xs text-slate-400">Commission Rate</div>
+                <div className="text-2xl font-bold text-purple-100">{avgRate.toFixed(1)}%</div>
+                <div className="text-xs text-slate-400">Avg Commission Rate</div>
               </div>
             </div>
           </CardContent>
@@ -106,6 +115,8 @@ const CommissionBoard = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
+              {isLoading && <p className="text-slate-400 text-sm">Loading commissions…</p>}
+              {!isLoading && commissions.length === 0 && <p className="text-slate-400 text-sm">No commission records.</p>}
               {commissions.map((commission, index) => (
                 <motion.div
                   key={commission.id}
@@ -116,13 +127,13 @@ const CommissionBoard = () => {
                 >
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-cyan-400 text-sm">{commission.id}</span>
-                      <span className="font-medium text-slate-200">{commission.deal}</span>
+                      <span className="font-mono text-cyan-400 text-sm">{commission.id.slice(0, 8)}</span>
+                      <span className="font-medium text-slate-200">{memberName(team, commission.member_id) ?? "Unassigned"}</span>
                     </div>
-                    <span className="text-xs text-slate-500">{commission.date}</span>
+                    <span className="text-xs text-slate-500">{commission.period}</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-lg font-bold text-emerald-400">${commission.amount}</span>
+                    <span className="text-lg font-bold text-emerald-400">{currency(commission.earned)}</span>
                     <Badge className={getStatusBadge(commission.status)}>{commission.status}</Badge>
                   </div>
                 </motion.div>
@@ -172,24 +183,6 @@ const CommissionBoard = () => {
           </CardContent>
         </Card>
       </div>
-
-      <Card className="bg-gradient-to-r from-amber-900/30 to-red-900/30 border-amber-500/30">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Award className="w-6 h-6 text-amber-400" />
-              <div>
-                <h3 className="font-medium text-amber-100">Performance Bonus Available!</h3>
-                <p className="text-sm text-slate-400">Close 2 more deals this week to unlock $500 bonus</p>
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="text-2xl font-bold text-amber-400">$500</div>
-              <div className="text-xs text-slate-400">Potential Bonus</div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 };

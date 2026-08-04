@@ -1,16 +1,15 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { 
-  Plus, 
-  Search, 
-  Filter, 
-  Phone, 
-  MessageCircle, 
-  Globe, 
-  MoreHorizontal,
+import {
+  Plus,
+  Search,
+  Filter,
+  Phone,
+  MessageCircle,
+  Globe,
   Mail,
-  Calendar,
-  ChevronRight
+  ChevronRight,
+  Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,66 +30,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { toast } from "@/hooks/use-toast";
+import {
+  useLeads,
+  useTeamMembers,
+  useInsertRow,
+  useUpdateRow,
+  useDeleteRow,
+  memberName,
+  currency,
+  relativeTime,
+} from "@/hooks/useSalesSupportData";
 
 const statusPipeline = [
-  { id: "new", label: "New", color: "bg-blue-500", count: 24 },
-  { id: "contacted", label: "Contacted", color: "bg-yellow-500", count: 18 },
-  { id: "qualified", label: "Qualified", color: "bg-purple-500", count: 12 },
-  { id: "proposal", label: "Proposal", color: "bg-pink-500", count: 8 },
-  { id: "negotiation", label: "Negotiation", color: "bg-orange-500", count: 5 },
-];
-
-const leads = [
-  { 
-    id: 1, 
-    name: "Rahul Sharma", 
-    email: "rahul@company.com", 
-    phone: "+91 98765 43210",
-    source: "Website", 
-    status: "new", 
-    value: "₹50,000",
-    date: "Today, 10:30 AM"
-  },
-  { 
-    id: 2, 
-    name: "Priya Patel", 
-    email: "priya@startup.io", 
-    phone: "+91 87654 32109",
-    source: "WhatsApp", 
-    status: "contacted", 
-    value: "₹1,20,000",
-    date: "Today, 9:15 AM"
-  },
-  { 
-    id: 3, 
-    name: "Amit Kumar", 
-    email: "amit@business.com", 
-    phone: "+91 76543 21098",
-    source: "Call", 
-    status: "qualified", 
-    value: "₹2,50,000",
-    date: "Yesterday"
-  },
-  { 
-    id: 4, 
-    name: "Sneha Gupta", 
-    email: "sneha@corp.in", 
-    phone: "+91 65432 10987",
-    source: "Website", 
-    status: "proposal", 
-    value: "₹75,000",
-    date: "Yesterday"
-  },
-  { 
-    id: 5, 
-    name: "Vikram Singh", 
-    email: "vikram@tech.com", 
-    phone: "+91 54321 09876",
-    source: "Call", 
-    status: "new", 
-    value: "₹3,00,000",
-    date: "2 days ago"
-  },
+  { id: "new", label: "New", color: "bg-blue-500" },
+  { id: "contacted", label: "Contacted", color: "bg-yellow-500" },
+  { id: "qualified", label: "Qualified", color: "bg-purple-500" },
+  { id: "proposal", label: "Proposal", color: "bg-pink-500" },
+  { id: "negotiation", label: "Negotiation", color: "bg-orange-500" },
 ];
 
 const getSourceIcon = (source: string) => {
@@ -103,15 +60,60 @@ const getSourceIcon = (source: string) => {
 };
 
 const LeadManagement = () => {
+  const { data: leads, isLoading } = useLeads();
+  const { data: members } = useTeamMembers();
+  const insertLead = useInsertRow("sales_leads");
+  const updateLead = useUpdateRow("sales_leads");
+  const deleteLead = useDeleteRow("sales_leads");
+
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("all");
+  const [dialogOpen, setDialogOpen] = useState(false);
 
-  const filteredLeads = leads.filter(lead => {
-    const matchesSearch = lead.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         lead.email.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = selectedStatus === "all" || lead.status === selectedStatus;
+  const [form, setForm] = useState({
+    contact_name: "",
+    company: "",
+    email: "",
+    phone: "",
+    source: "",
+    value: "",
+  });
+
+  const allLeads = leads ?? [];
+
+  const filteredLeads = allLeads.filter((lead) => {
+    const matchesSearch =
+      lead.contact_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (lead.email ?? "").toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStatus = selectedStatus === "all" || lead.stage === selectedStatus;
     return matchesSearch && matchesStatus;
   });
+
+  const handleAddLead = async () => {
+    if (!form.contact_name || !form.company) {
+      toast({ title: "Missing fields", description: "Name and company are required.", variant: "destructive" });
+      return;
+    }
+    try {
+      await insertLead.mutateAsync({
+        contact_name: form.contact_name,
+        company: form.company,
+        email: form.email || null,
+        phone: form.phone || null,
+        source: form.source || "Website",
+        value: Number(form.value) || 0,
+        stage: "new",
+        urgency: "medium",
+        qualified: false,
+        reference: `LD-${Date.now()}`,
+      });
+      toast({ title: "Lead added", description: `${form.contact_name} has been added.` });
+      setForm({ contact_name: "", company: "", email: "", phone: "", source: "", value: "" });
+      setDialogOpen(false);
+    } catch (err) {
+      toast({ title: "Failed to add lead", description: String(err), variant: "destructive" });
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -121,7 +123,7 @@ const LeadManagement = () => {
           <h1 className="text-2xl font-bold text-slate-800">Lead Management</h1>
           <p className="text-slate-500 mt-1">Manage and track all your leads</p>
         </div>
-        <Dialog>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button className="gap-2 bg-blue-500 hover:bg-blue-600" size="lg">
               <Plus className="w-5 h-5" />
@@ -135,36 +137,71 @@ const LeadManagement = () => {
             <div className="space-y-4 mt-4">
               <div>
                 <Label>Full Name</Label>
-                <Input placeholder="Enter lead name" className="mt-1" />
+                <Input
+                  placeholder="Enter lead name"
+                  className="mt-1"
+                  value={form.contact_name}
+                  onChange={(e) => setForm((f) => ({ ...f, contact_name: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label>Company</Label>
+                <Input
+                  placeholder="Company name"
+                  className="mt-1"
+                  value={form.company}
+                  onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
+                />
               </div>
               <div>
                 <Label>Email</Label>
-                <Input type="email" placeholder="email@example.com" className="mt-1" />
+                <Input
+                  type="email"
+                  placeholder="email@example.com"
+                  className="mt-1"
+                  value={form.email}
+                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                />
               </div>
               <div>
                 <Label>Phone</Label>
-                <Input placeholder="+91 " className="mt-1" />
+                <Input
+                  placeholder="+91 "
+                  className="mt-1"
+                  value={form.phone}
+                  onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                />
               </div>
               <div>
                 <Label>Source</Label>
-                <Select>
+                <Select value={form.source} onValueChange={(v) => setForm((f) => ({ ...f, source: v }))}>
                   <SelectTrigger className="mt-1">
                     <SelectValue placeholder="Select source" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="call">Call</SelectItem>
-                    <SelectItem value="whatsapp">WhatsApp</SelectItem>
-                    <SelectItem value="website">Website</SelectItem>
-                    <SelectItem value="referral">Referral</SelectItem>
+                    <SelectItem value="Call">Call</SelectItem>
+                    <SelectItem value="WhatsApp">WhatsApp</SelectItem>
+                    <SelectItem value="Website">Website</SelectItem>
+                    <SelectItem value="Referral">Referral</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div>
                 <Label>Expected Value</Label>
-                <Input placeholder="₹ 0" className="mt-1" />
+                <Input
+                  placeholder="0"
+                  className="mt-1"
+                  value={form.value}
+                  onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))}
+                />
               </div>
-              <Button className="w-full bg-blue-500 hover:bg-blue-600" size="lg">
-                Add Lead
+              <Button
+                className="w-full bg-blue-500 hover:bg-blue-600"
+                size="lg"
+                onClick={handleAddLead}
+                disabled={insertLead.isPending}
+              >
+                {insertLead.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Add Lead"}
               </Button>
             </div>
           </DialogContent>
@@ -180,7 +217,7 @@ const LeadManagement = () => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.1 }}
           >
-            <Card 
+            <Card
               className={`cursor-pointer transition-all hover:shadow-md ${
                 selectedStatus === status.id ? 'ring-2 ring-blue-500' : ''
               }`}
@@ -190,7 +227,9 @@ const LeadManagement = () => {
                 <div className="flex items-center gap-3">
                   <div className={`w-3 h-3 rounded-full ${status.color}`} />
                   <div>
-                    <p className="text-2xl font-bold text-slate-800">{status.count}</p>
+                    <p className="text-2xl font-bold text-slate-800">
+                      {allLeads.filter((l) => l.stage === status.id).length}
+                    </p>
                     <p className="text-sm text-slate-500">{status.label}</p>
                   </div>
                 </div>
@@ -206,8 +245,8 @@ const LeadManagement = () => {
           <div className="flex flex-col md:flex-row gap-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <Input 
-                placeholder="Search leads by name or email..." 
+              <Input
+                placeholder="Search leads by name or email..."
                 className="pl-10"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -240,59 +279,105 @@ const LeadManagement = () => {
           <CardTitle className="text-slate-800">All Leads ({filteredLeads.length})</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            {filteredLeads.map((lead, index) => {
-              const SourceIcon = getSourceIcon(lead.source);
-              const statusInfo = statusPipeline.find(s => s.id === lead.status);
-              
-              return (
-                <motion.div
-                  key={lead.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                  className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer group"
-                >
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold text-lg">
-                    {lead.name.charAt(0)}
-                  </div>
-                  
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="font-semibold text-slate-800">{lead.name}</p>
-                      <Badge className={`${statusInfo?.color} text-white`}>
-                        {statusInfo?.label}
-                      </Badge>
+          {isLoading ? (
+            <p className="text-slate-500 text-sm py-6 text-center">Loading leads...</p>
+          ) : filteredLeads.length === 0 ? (
+            <p className="text-slate-500 text-sm py-6 text-center">No leads found.</p>
+          ) : (
+            <div className="space-y-3">
+              {filteredLeads.map((lead, index) => {
+                const SourceIcon = getSourceIcon(lead.source);
+                const statusInfo = statusPipeline.find(s => s.id === lead.stage);
+                const owner = memberName(members, lead.assigned_to);
+
+                return (
+                  <motion.div
+                    key={lead.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                    className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer group"
+                  >
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold text-lg">
+                      {lead.contact_name.charAt(0)}
                     </div>
-                    <div className="flex items-center gap-4 mt-1 text-sm text-slate-500">
-                      <span className="flex items-center gap-1">
-                        <Mail className="w-3 h-3" />
-                        {lead.email}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Phone className="w-3 h-3" />
-                        {lead.phone}
-                      </span>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-slate-800">{lead.contact_name}</p>
+                        <Badge className={`${statusInfo?.color ?? "bg-slate-400"} text-white`}>
+                          {statusInfo?.label ?? lead.stage}
+                        </Badge>
+                        {owner && <span className="text-xs text-slate-400">• {owner}</span>}
+                      </div>
+                      <div className="flex items-center gap-4 mt-1 text-sm text-slate-500">
+                        {lead.email && (
+                          <span className="flex items-center gap-1">
+                            <Mail className="w-3 h-3" />
+                            {lead.email}
+                          </span>
+                        )}
+                        {lead.phone && (
+                          <span className="flex items-center gap-1">
+                            <Phone className="w-3 h-3" />
+                            {lead.phone}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-slate-200">
-                    <SourceIcon className="w-4 h-4 text-slate-500" />
-                    <span className="text-sm text-slate-600">{lead.source}</span>
-                  </div>
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-slate-200">
+                      <SourceIcon className="w-4 h-4 text-slate-500" />
+                      <span className="text-sm text-slate-600">{lead.source}</span>
+                    </div>
 
-                  <div className="text-right">
-                    <p className="font-bold text-slate-800">{lead.value}</p>
-                    <p className="text-xs text-slate-500">{lead.date}</p>
-                  </div>
+                    <div className="text-right">
+                      <p className="font-bold text-slate-800">{currency(lead.value)}</p>
+                      <p className="text-xs text-slate-500">{relativeTime(lead.created_at)}</p>
+                    </div>
 
-                  <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100">
-                    <ChevronRight className="w-5 h-5" />
-                  </Button>
-                </motion.div>
-              );
-            })}
-          </div>
+                    <Select
+                      value={lead.stage}
+                      onValueChange={async (v) => {
+                        try {
+                          await updateLead.mutateAsync({ id: lead.id, values: { stage: v } });
+                          toast({ title: "Lead updated" });
+                        } catch (err) {
+                          toast({ title: "Update failed", description: String(err), variant: "destructive" });
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="w-32 h-8 opacity-0 group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {statusPipeline.map(s => (
+                          <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="opacity-0 group-hover:opacity-100"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        try {
+                          await deleteLead.mutateAsync(lead.id);
+                          toast({ title: "Lead removed" });
+                        } catch (err) {
+                          toast({ title: "Delete failed", description: String(err), variant: "destructive" });
+                        }
+                      }}
+                    >
+                      <ChevronRight className="w-5 h-5" />
+                    </Button>
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

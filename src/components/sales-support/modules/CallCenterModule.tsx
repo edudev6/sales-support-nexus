@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { motion } from "framer-motion";
 import { Phone, PhoneIncoming, PhoneMissed, PhoneOff, UserPlus, Ticket, ArrowUp, CheckCircle, Clock, Mic } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,60 +5,48 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-interface CallRecord {
-  id: string;
-  type: "incoming" | "outgoing" | "missed";
-  caller: string;
-  phone: string;
-  duration: string;
-  status: "completed" | "missed" | "callback_pending" | "escalated";
-  agent: string | null;
-  aiSummary: string;
-  timestamp: string;
-  hasRecording: boolean;
-}
+import { useCallLogs, useTeamMembers, useUpdateRow, relativeTime, memberName } from "@/hooks/useSalesSupportData";
 
 const CallCenterModule = () => {
-  const [calls, setCalls] = useState<CallRecord[]>([
-    { id: "CALL-001", type: "incoming", caller: "Tech Solutions Ltd", phone: "+1 555-0101", duration: "12:34", status: "completed", agent: "Sarah Chen", aiSummary: "Customer inquired about invoice discrepancy. Resolved.", timestamp: "10 min ago", hasRecording: true },
-    { id: "CALL-002", type: "missed", caller: "Healthcare Plus", phone: "+1 555-0102", duration: "-", status: "callback_pending", agent: null, aiSummary: "Missed call - requires callback", timestamp: "25 min ago", hasRecording: false },
-    { id: "CALL-003", type: "incoming", caller: "Unknown", phone: "+1 555-0103", duration: "3:45", status: "escalated", agent: "Mike Johnson", aiSummary: "Angry customer regarding service downtime. Escalated to manager.", timestamp: "45 min ago", hasRecording: true },
-    { id: "CALL-004", type: "outgoing", caller: "Retail Mart", phone: "+1 555-0104", duration: "8:21", status: "completed", agent: "Lisa Park", aiSummary: "Follow-up call for pending order. Customer confirmed shipment.", timestamp: "1 hour ago", hasRecording: true },
-    { id: "CALL-005", type: "missed", caller: "EduLearn Academy", phone: "+1 555-0105", duration: "-", status: "missed", agent: null, aiSummary: "Missed call - no voicemail", timestamp: "2 hours ago", hasRecording: false },
-  ]);
+  const { data: callsData, isLoading } = useCallLogs();
+  const { data: members } = useTeamMembers();
+  const updateCall = useUpdateRow("call_logs");
 
-  const agents = ["Sarah Chen", "Mike Johnson", "Lisa Park", "Emma Davis", "James Wilson"];
+  const calls = callsData ?? [];
+  const agents = members ?? [];
 
-  const handleAssignCallback = (callId: string, agent: string) => {
+  const handleAssignCallback = async (callId: string, agentId: string) => {
     toast.loading("Assigning callback...", { id: `callback-${callId}` });
-    setTimeout(() => {
-      setCalls(calls.map(c => c.id === callId ? { ...c, agent, status: "callback_pending" } : c));
-      toast.success(`Callback assigned to ${agent}`, { id: `callback-${callId}` });
-    }, 500);
+    try {
+      await updateCall.mutateAsync({ id: callId, values: { agent_id: agentId, status: "callback_pending" } });
+      toast.success(`Callback assigned to ${memberName(agents, agentId) ?? "agent"}`, { id: `callback-${callId}` });
+    } catch (e) {
+      toast.error("Failed to assign callback", { id: `callback-${callId}` });
+    }
   };
 
-  const handleMarkResolved = (callId: string) => {
+  const handleMarkResolved = async (callId: string) => {
     toast.loading("Marking as resolved...", { id: `resolve-${callId}` });
-    setTimeout(() => {
-      setCalls(calls.map(c => c.id === callId ? { ...c, status: "completed" } : c));
+    try {
+      await updateCall.mutateAsync({ id: callId, values: { status: "completed" } });
       toast.success("Call marked as resolved", { id: `resolve-${callId}` });
-    }, 500);
+    } catch (e) {
+      toast.error("Failed to resolve call", { id: `resolve-${callId}` });
+    }
   };
 
-  const handleEscalate = (callId: string) => {
+  const handleEscalate = async (callId: string) => {
     toast.loading("Escalating call...", { id: `escalate-${callId}` });
-    setTimeout(() => {
-      setCalls(calls.map(c => c.id === callId ? { ...c, status: "escalated" } : c));
+    try {
+      await updateCall.mutateAsync({ id: callId, values: { status: "escalated" } });
       toast.warning("Call escalated to manager", { id: `escalate-${callId}` });
-    }, 600);
+    } catch (e) {
+      toast.error("Failed to escalate call", { id: `escalate-${callId}` });
+    }
   };
 
   const handleConvertToTicket = (callId: string) => {
-    toast.loading("Creating ticket from call...", { id: `ticket-${callId}` });
-    setTimeout(() => {
-      toast.success("Ticket created from call", { id: `ticket-${callId}`, description: "TKT-NEW added to queue" });
-    }, 700);
+    toast.info("Convert to ticket", { description: "Open the Tickets module to create a ticket from this call." });
   };
 
   const handlePlayRecording = (callId: string) => {
@@ -68,8 +55,8 @@ const CallCenterModule = () => {
 
   const getTypeIcon = (type: string) => {
     switch (type) {
-      case "incoming": return PhoneIncoming;
-      case "outgoing": return Phone;
+      case "inbound": return PhoneIncoming;
+      case "outbound": return Phone;
       case "missed": return PhoneMissed;
       default: return Phone;
     }
@@ -85,9 +72,18 @@ const CallCenterModule = () => {
     }
   };
 
-  const missedCalls = calls.filter(c => c.type === "missed").length;
+  const formatDuration = (secs: number) => {
+    if (!secs) return "-";
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  };
+
+  const missedCalls = calls.filter(c => c.direction === "missed" || c.status === "missed").length;
   const pendingCallbacks = calls.filter(c => c.status === "callback_pending").length;
   const escalatedCalls = calls.filter(c => c.status === "escalated").length;
+  const avgWait = calls.length ? Math.round(calls.reduce((s, c) => s + (c.wait_seconds ?? 0), 0) / calls.length) : 0;
+  const avgDuration = calls.length ? Math.round(calls.reduce((s, c) => s + (c.duration_seconds ?? 0), 0) / calls.length) : 0;
 
   return (
     <div className="space-y-6">
@@ -117,15 +113,15 @@ const CallCenterModule = () => {
         <Card className="bg-slate-900/50 border-amber-500/20">
           <CardContent className="p-4 text-center">
             <Clock className="w-8 h-8 text-amber-400 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-amber-100">{pendingCallbacks}</div>
-            <div className="text-xs text-slate-400">Pending Callbacks</div>
+            <div className="text-2xl font-bold text-amber-100">{avgWait}s</div>
+            <div className="text-xs text-slate-400">Avg Wait Time</div>
           </CardContent>
         </Card>
         <Card className="bg-slate-900/50 border-purple-500/20">
           <CardContent className="p-4 text-center">
             <ArrowUp className="w-8 h-8 text-purple-400 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-purple-100">{escalatedCalls}</div>
-            <div className="text-xs text-slate-400">Escalated</div>
+            <div className="text-2xl font-bold text-purple-100">{formatDuration(avgDuration)}</div>
+            <div className="text-xs text-slate-400">Avg Duration</div>
           </CardContent>
         </Card>
       </div>
@@ -137,8 +133,11 @@ const CallCenterModule = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
+            {isLoading && <p className="text-slate-400 text-sm">Loading calls…</p>}
+            {!isLoading && calls.length === 0 && <p className="text-slate-400 text-sm">No calls recorded.</p>}
             {calls.map((call, index) => {
-              const TypeIcon = getTypeIcon(call.type);
+              const TypeIcon = getTypeIcon(call.direction ?? call.status);
+              const agentName = memberName(agents, call.agent_id);
               return (
                 <motion.div
                   key={call.id}
@@ -149,43 +148,41 @@ const CallCenterModule = () => {
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-lg ${call.type === "missed" ? "bg-red-500/20" : "bg-cyan-500/20"} flex items-center justify-center`}>
-                        <TypeIcon className={`w-5 h-5 ${call.type === "missed" ? "text-red-400" : "text-cyan-400"}`} />
+                      <div className={`w-10 h-10 rounded-lg ${call.status === "missed" ? "bg-red-500/20" : "bg-cyan-500/20"} flex items-center justify-center`}>
+                        <TypeIcon className={`w-5 h-5 ${call.status === "missed" ? "text-red-400" : "text-cyan-400"}`} />
                       </div>
                       <div>
-                        <span className="font-mono text-cyan-400 text-sm">{call.id}</span>
+                        <span className="font-mono text-cyan-400 text-sm">{call.id.slice(0, 8)}</span>
                         <Badge className={`ml-2 ${getStatusColor(call.status)}`}>{call.status.replace('_', ' ')}</Badge>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 text-sm text-slate-400">
-                      {call.duration !== "-" && <span className="font-mono">{call.duration}</span>}
+                      {call.duration_seconds > 0 && <span className="font-mono">{formatDuration(call.duration_seconds)}</span>}
                       <span>•</span>
-                      <span>{call.timestamp}</span>
+                      <span>{relativeTime(call.started_at)}</span>
                     </div>
                   </div>
 
                   <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="font-medium text-slate-100">{call.caller}</h4>
-                      <p className="text-sm text-slate-400">{call.phone} {call.agent && `• Agent: ${call.agent}`}</p>
-                      <p className="text-sm text-cyan-400/80 mt-1 italic">AI: {call.aiSummary}</p>
+                      <h4 className="font-medium text-slate-100">{call.caller_name}</h4>
+                      <p className="text-sm text-slate-400">{call.phone} {agentName && `• Agent: ${agentName}`}</p>
+                      {call.notes && <p className="text-sm text-cyan-400/80 mt-1 italic">AI: {call.notes}</p>}
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {call.hasRecording && (
-                        <Button size="sm" variant="ghost" onClick={() => handlePlayRecording(call.id)} className="text-cyan-400">
-                          <Mic className="w-4 h-4" />
-                        </Button>
-                      )}
+                      <Button size="sm" variant="ghost" onClick={() => handlePlayRecording(call.id)} className="text-cyan-400">
+                        <Mic className="w-4 h-4" />
+                      </Button>
 
-                      {(call.status === "missed" || call.status === "callback_pending") && !call.agent && (
+                      {(call.status === "missed" || call.status === "callback_pending") && !call.agent_id && (
                         <Select onValueChange={(agent) => handleAssignCallback(call.id, agent)}>
                           <SelectTrigger className="w-36 bg-slate-700/50 border-slate-600">
                             <SelectValue placeholder="Assign callback" />
                           </SelectTrigger>
                           <SelectContent>
                             {agents.map(agent => (
-                              <SelectItem key={agent} value={agent}>{agent}</SelectItem>
+                              <SelectItem key={agent.id} value={agent.id}>{agent.full_name}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>

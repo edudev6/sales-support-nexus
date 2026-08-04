@@ -4,23 +4,48 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { toast } from "sonner";
+import { useEscalations, useTickets, useUpdateRow, relativeTime } from "@/hooks/useSalesSupportData";
+
+const escalationLevels = [
+  { level: 1, name: "Sales Support", handler: "Frontline Team", responseTime: "15 min", icon: User, color: "cyan" },
+  { level: 2, name: "Franchise Manager", handler: "Regional Lead", responseTime: "30 min", icon: Users, color: "amber" },
+  { level: 3, name: "Super Admin", handler: "HQ Team", responseTime: "1 hour", icon: Shield, color: "red" },
+];
 
 const EscalationTree = () => {
-  const escalationLevels = [
-    { level: 1, name: "Sales Support", handler: "You", responseTime: "15 min", icon: User, color: "cyan" },
-    { level: 2, name: "Franchise Manager", handler: "Regional Lead", responseTime: "30 min", icon: Users, color: "amber" },
-    { level: 3, name: "Super Admin", handler: "HQ Team", responseTime: "1 hour", icon: Shield, color: "red" },
-  ];
+  const { data: escalationsData, isLoading } = useEscalations();
+  const { data: ticketsData } = useTickets();
+  const updateEscalation = useUpdateRow("support_escalations");
 
-  const activeEscalations = [
-    { id: "ESC-001", issue: "Pricing dispute - Tech Solutions", level: 2, status: "active", timeRemaining: "18 min", auto: false },
-    { id: "ESC-002", issue: "Contract review needed - HealthCare Plus", level: 1, status: "pending", timeRemaining: "8 min", auto: true },
-    { id: "ESC-003", issue: "Technical integration issue", level: 3, status: "resolved", timeRemaining: "-", auto: false },
-  ];
+  const escalations = escalationsData ?? [];
+  const tickets = ticketsData ?? [];
+  const ticketFor = (id: string | null) => tickets.find(t => t.id === id);
+
+  const handleResolve = async (id: string) => {
+    toast.loading("Resolving escalation...", { id: `resolve-${id}` });
+    try {
+      await updateEscalation.mutateAsync({ id, values: { status: "resolved" } });
+      toast.success("Escalation resolved", { id: `resolve-${id}` });
+    } catch {
+      toast.error("Failed to resolve", { id: `resolve-${id}` });
+    }
+  };
+
+  const handleEscalateUp = async (id: string, level: number) => {
+    if (level >= 3) return;
+    toast.loading("Escalating...", { id: `up-${id}` });
+    try {
+      await updateEscalation.mutateAsync({ id, values: { level: level + 1 } });
+      toast.warning(`Escalated to Level ${level + 1}`, { id: `up-${id}` });
+    } catch {
+      toast.error("Failed to escalate", { id: `up-${id}` });
+    }
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case "active": return "bg-amber-500/20 text-amber-300";
+      case "in_progress": return "bg-amber-500/20 text-amber-300";
       case "pending": return "bg-blue-500/20 text-blue-300";
       case "resolved": return "bg-emerald-500/20 text-emerald-300";
       default: return "bg-slate-500/20 text-slate-300";
@@ -43,15 +68,12 @@ const EscalationTree = () => {
           <h2 className="text-2xl font-bold text-cyan-100">Escalation Tree</h2>
           <p className="text-slate-400">Multi-level support escalation with auto-timers</p>
         </div>
-        <Button className="bg-gradient-to-r from-red-500 to-amber-500 text-white">
-          <ArrowUp className="w-4 h-4 mr-2" />
-          Escalate Issue
-        </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {escalationLevels.map((level, index) => {
           const Icon = level.icon;
+          const countAtLevel = escalations.filter(e => e.level === level.level && e.status !== "resolved").length;
           return (
             <motion.div
               key={level.level}
@@ -64,7 +86,7 @@ const EscalationTree = () => {
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between mb-3">
                     <Badge className={`bg-${level.color}-500/20 text-${level.color}-300`}>Level {level.level}</Badge>
-                    <Clock className="w-4 h-4 text-slate-500" />
+                    <span className="text-xs text-slate-500">{countAtLevel} active</span>
                   </div>
                   <div className="flex items-center gap-3 mb-2">
                     <div className={`w-10 h-10 rounded-lg bg-${level.color}-500/20 flex items-center justify-center`}>
@@ -94,61 +116,63 @@ const EscalationTree = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {activeEscalations.map((escalation, index) => (
-              <motion.div
-                key={escalation.id}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: index * 0.1 }}
-                className="p-4 bg-slate-800/50 rounded-lg"
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono text-cyan-400 text-sm">{escalation.id}</span>
-                    <Badge className={getLevelColor(escalation.level)}>Level {escalation.level}</Badge>
-                    <Badge className={getStatusBadge(escalation.status)}>{escalation.status}</Badge>
-                    {escalation.auto && (
-                      <Badge className="bg-purple-500/20 text-purple-300">Auto-Escalated</Badge>
+            {isLoading && <p className="text-slate-400 text-sm">Loading escalations…</p>}
+            {!isLoading && escalations.length === 0 && <p className="text-slate-400 text-sm">No escalations recorded.</p>}
+            {escalations.map((escalation, index) => {
+              const ticket = ticketFor(escalation.ticket_id);
+              return (
+                <motion.div
+                  key={escalation.id}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: index * 0.1 }}
+                  className="p-4 bg-slate-800/50 rounded-lg"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-cyan-400 text-sm">{escalation.reference}</span>
+                      <Badge className={getLevelColor(escalation.level)}>Level {escalation.level}</Badge>
+                      <Badge className={getStatusBadge(escalation.status)}>{escalation.status.replace('_', ' ')}</Badge>
+                    </div>
+                    {escalation.status !== "resolved" && (
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-amber-400" />
+                        <span className="text-amber-300">{relativeTime(escalation.created_at)}</span>
+                      </div>
                     )}
                   </div>
+
+                  <p className="text-slate-200 mb-3">{ticket?.subject ?? escalation.reason}</p>
+
                   {escalation.status !== "resolved" && (
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-amber-400" />
-                      <span className="text-amber-300">{escalation.timeRemaining}</span>
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1 mr-4">
+                        <Progress value={escalation.status === "in_progress" ? 60 : 30} className="h-2 bg-slate-700" />
+                      </div>
+                      <div className="flex gap-2">
+                        {escalation.level < 3 && (
+                          <Button size="sm" variant="outline" onClick={() => handleEscalateUp(escalation.id, escalation.level)} className="border-amber-500/30 text-amber-300">
+                            <ArrowUp className="w-3 h-3 mr-1" />
+                            Escalate
+                          </Button>
+                        )}
+                        <Button size="sm" onClick={() => handleResolve(escalation.id)} className="bg-emerald-500 hover:bg-emerald-600 text-white">
+                          <CheckCircle className="w-3 h-3 mr-1" />
+                          Resolve
+                        </Button>
+                      </div>
                     </div>
                   )}
-                </div>
-                
-                <p className="text-slate-200 mb-3">{escalation.issue}</p>
-                
-                {escalation.status !== "resolved" && (
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1 mr-4">
-                      <Progress value={escalation.status === "active" ? 60 : 80} className="h-2 bg-slate-700" />
+
+                  {escalation.status === "resolved" && (
+                    <div className="flex items-center gap-2 text-emerald-400">
+                      <CheckCircle className="w-4 h-4" />
+                      <span className="text-sm">Resolved successfully</span>
                     </div>
-                    <div className="flex gap-2">
-                      {escalation.level < 3 && (
-                        <Button size="sm" variant="outline" className="border-amber-500/30 text-amber-300">
-                          <ArrowUp className="w-3 h-3 mr-1" />
-                          Escalate
-                        </Button>
-                      )}
-                      <Button size="sm" className="bg-emerald-500 hover:bg-emerald-600 text-white">
-                        <CheckCircle className="w-3 h-3 mr-1" />
-                        Resolve
-                      </Button>
-                    </div>
-                  </div>
-                )}
-                
-                {escalation.status === "resolved" && (
-                  <div className="flex items-center gap-2 text-emerald-400">
-                    <CheckCircle className="w-4 h-4" />
-                    <span className="text-sm">Resolved successfully</span>
-                  </div>
-                )}
-              </motion.div>
-            ))}
+                  )}
+                </motion.div>
+              );
+            })}
           </div>
         </CardContent>
       </Card>
