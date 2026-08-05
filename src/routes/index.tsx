@@ -4,6 +4,9 @@ import SalesSupportDashboard from "@/components/salespages/SalesSupportDashboard
 export const Route = createFileRoute("/")({
   // Dashboard UI is live/interactive; skip SSR so timers and live data hydrate cleanly.
   ssr: false,
+  validateSearch: (search: Record<string, unknown>) => ({
+    section: typeof search.section === "string" ? search.section : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Sales & Support Command Center | Software Vala" },
