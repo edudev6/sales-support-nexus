@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import SalesSupportSidebar from "@/components/sales-support/SalesSupportSidebar";
 import SalesSupportTopBar from "@/components/sales-support/SalesSupportTopBar";
 import { Card, CardContent } from "@/components/ui/card";
-import { Inbox, TrendingUp, DollarSign, Clock, AlertTriangle, Ticket, Phone, Mail } from "lucide-react";
-import { toast } from "sonner";
+import { AlertTriangle, Ticket, Phone, TrendingUp } from "lucide-react";
+import { useLeads, useTickets, useEscalations, useCallLogs } from "@/hooks/useSalesSupportData";
 
 // Import all SSM modules
 import {
@@ -25,13 +26,43 @@ import SalesPerformanceDashboard from "@/components/sales-support/SalesPerforman
 import LeadInbox from "@/components/sales-support/LeadInbox";
 
 const SalesSupportDashboard = () => {
-  const [activeSection, setActiveSection] = useState<string>("overview");
+  const navigate = useNavigate();
+  const { section } = useSearch({ from: "/" });
+  const activeSection = section ?? "overview";
   const [collapsed, setCollapsed] = useState(false);
+  const reduceMotion = useReducedMotion();
 
-  // Clickable KPI cards that navigate to filtered views
-  const handleKPIClick = (section: string) => {
-    setActiveSection(section);
-    toast.info(`Navigating to ${section.replace('-', ' ')}`);
+  // Live KPI data
+  const { data: leads } = useLeads();
+  const { data: tickets } = useTickets();
+  const { data: escalations } = useEscalations();
+  const { data: calls } = useCallLogs();
+
+  const ticketsWaiting = (tickets ?? []).filter((t) => t.status === "open" || t.status === "pending").length;
+  const slaBreachRisk = (tickets ?? []).filter((t) => t.sla_breached || t.sla_minutes_remaining <= 30).length
+    + (escalations ?? []).filter((e) => e.status !== "resolved" && e.level >= 2).length;
+  const missedCalls = (calls ?? []).filter((c) => c.status === "missed").length;
+  const hotLeads = (leads ?? []).filter(
+    (l) => l.urgency === "hot" && l.stage !== "won" && l.stage !== "lost",
+  ).length;
+
+  // KPI cards deep-link to the filtered view via the URL
+  const setSection = (next: string) => {
+    navigate({ to: "/", search: { section: next } });
+  };
+
+  const kpis = [
+    { id: "support-tickets", label: "Tickets Waiting", value: ticketsWaiting, icon: Ticket, tone: "cyan" },
+    { id: "escalations", label: "SLA Breach Risk", value: slaBreachRisk, icon: AlertTriangle, tone: "red" },
+    { id: "call-center", label: "Missed Calls", value: missedCalls, icon: Phone, tone: "amber" },
+    { id: "sales-leads", label: "Hot Sales Leads", value: hotLeads, icon: TrendingUp, tone: "purple" },
+  ] as const;
+
+  const toneClasses: Record<string, { border: string; chip: string; icon: string; value: string }> = {
+    cyan: { border: "border-cyan-500/20", chip: "bg-cyan-500/20", icon: "text-cyan-400", value: "text-cyan-100" },
+    red: { border: "border-red-500/20", chip: "bg-red-500/20", icon: "text-red-400", value: "text-red-100" },
+    amber: { border: "border-amber-500/20", chip: "bg-amber-500/20", icon: "text-amber-400", value: "text-amber-100" },
+    purple: { border: "border-purple-500/20", chip: "bg-purple-500/20", icon: "text-purple-400", value: "text-purple-100" },
   };
 
   const renderContent = () => {
@@ -39,60 +70,34 @@ const SalesSupportDashboard = () => {
       case "overview":
         return (
           <div className="space-y-6">
-            {/* Clickable KPI Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <Card className="bg-slate-900/50 border-cyan-500/20 cursor-pointer hover:bg-slate-800/50 transition-colors" onClick={() => handleKPIClick("support-tickets")}>
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center">
-                      <Ticket className="w-5 h-5 text-cyan-400" />
-                    </div>
-                    <div>
-                      <div className="text-2xl font-bold text-cyan-100">12</div>
-                      <div className="text-xs text-slate-400">Tickets Waiting</div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className="bg-slate-900/50 border-red-500/20 cursor-pointer hover:bg-slate-800/50 transition-colors" onClick={() => handleKPIClick("escalations")}>
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-red-500/20 flex items-center justify-center">
-                      <AlertTriangle className="w-5 h-5 text-red-400" />
-                    </div>
-                    <div>
-                      <div className="text-2xl font-bold text-red-100">3</div>
-                      <div className="text-xs text-slate-400">SLA Breach Risk</div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className="bg-slate-900/50 border-amber-500/20 cursor-pointer hover:bg-slate-800/50 transition-colors" onClick={() => handleKPIClick("call-center")}>
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">
-                      <Phone className="w-5 h-5 text-amber-400" />
-                    </div>
-                    <div>
-                      <div className="text-2xl font-bold text-amber-100">5</div>
-                      <div className="text-xs text-slate-400">Missed Calls</div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className="bg-slate-900/50 border-purple-500/20 cursor-pointer hover:bg-slate-800/50 transition-colors" onClick={() => handleKPIClick("sales-leads")}>
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
-                      <TrendingUp className="w-5 h-5 text-purple-400" />
-                    </div>
-                    <div>
-                      <div className="text-2xl font-bold text-purple-100">8</div>
-                      <div className="text-xs text-slate-400">Hot Sales Leads</div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+              {kpis.map((kpi) => {
+                const tone = toneClasses[kpi.tone]!;
+                const Icon = kpi.icon;
+                return (
+                  <button
+                    key={kpi.id}
+                    type="button"
+                    onClick={() => setSection(kpi.id)}
+                    aria-label={`${kpi.label}: ${kpi.value}. Open ${kpi.label} view`}
+                    className="text-left rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  >
+                    <Card className={`bg-slate-900/50 ${tone.border} hover:bg-slate-800/50 transition-colors h-full`}>
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-lg ${tone.chip} flex items-center justify-center`}>
+                            <Icon className={`w-5 h-5 ${tone.icon}`} aria-hidden="true" />
+                          </div>
+                          <div>
+                            <div className={`text-2xl font-bold ${tone.value}`}>{kpi.value}</div>
+                            <div className="text-xs text-slate-400">{kpi.label}</div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </button>
+                );
+              })}
             </div>
             <div className="grid grid-cols-1 gap-6">
               <LeadInbox />
@@ -120,17 +125,22 @@ const SalesSupportDashboard = () => {
   };
 
   return (
-    <motion.div 
-      initial={{ opacity: 0 }}
+    <motion.div
+      initial={reduceMotion ? false : { opacity: 0 }}
       animate={{ opacity: 1 }}
-      transition={{ duration: 0.5 }}
-      className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-cyan-950/20 flex"
+      transition={reduceMotion ? { duration: 0 } : { duration: 0.5 }}
+      className="min-h-dvh bg-gradient-to-br from-slate-950 via-slate-900 to-cyan-950/20 flex"
     >
-      <SalesSupportSidebar activeSection={activeSection as any} onSectionChange={(s) => setActiveSection(s)} collapsed={collapsed} onToggleCollapse={() => setCollapsed(!collapsed)} />
+      <SalesSupportSidebar activeSection={activeSection as any} onSectionChange={(s) => setSection(s)} collapsed={collapsed} onToggleCollapse={() => setCollapsed(!collapsed)} />
       <div className="flex-1 flex flex-col min-w-0">
         <SalesSupportTopBar />
         <main className="flex-1 p-6 overflow-auto">
-          <motion.div key={activeSection} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+          <motion.div
+            key={activeSection}
+            initial={reduceMotion ? false : { opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={reduceMotion ? { duration: 0 } : { duration: 0.4 }}
+          >
             {renderContent()}
           </motion.div>
         </main>
