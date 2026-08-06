@@ -15,17 +15,11 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
-
-const mockBots = [
-  { id: '1', name: 'Support Bot', channel: 'Web', model: 'GPT-4', languages: 5, status: 'active', conversations: 1234 },
-  { id: '2', name: 'Sales Assistant', channel: 'WhatsApp', model: 'GPT-3.5', languages: 3, status: 'active', conversations: 567 },
-  { id: '3', name: 'Android Helper', channel: 'Android', model: 'Claude', languages: 2, status: 'training', conversations: 89 },
-  { id: '4', name: 'FAQ Bot', channel: 'Web', model: 'GPT-4', languages: 8, status: 'paused', conversations: 2345 },
-  { id: '5', name: 'Onboarding Guide', channel: 'iOS', model: 'GPT-4', languages: 4, status: 'active', conversations: 456 },
-];
+import { useChatbots, useBotLanguages, useUpdateRow, useInsertRow, useDeleteRow, type Chatbot } from '@/hooks/useSalesSupportData';
 
 const getStatusBadge = (status: string) => {
   const styles: Record<string, string> = {
+    live: 'bg-green-500/10 text-green-600 border-green-500/20',
     active: 'bg-green-500/10 text-green-600 border-green-500/20',
     training: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
     paused: 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20',
@@ -36,20 +30,53 @@ const getStatusBadge = (status: string) => {
 
 const getChannelBadge = (channel: string) => {
   const styles: Record<string, string> = {
-    Web: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
-    WhatsApp: 'bg-green-500/10 text-green-600 border-green-500/20',
-    Android: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
-    iOS: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
+    web: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
+    whatsapp: 'bg-green-500/10 text-green-600 border-green-500/20',
+    android: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
+    ios: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
   };
   return styles[channel] || '';
 };
 
 export const SCChatbotList: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
+  const { data: bots, isLoading } = useChatbots();
+  const { data: languages } = useBotLanguages();
+  const updateBot = useUpdateRow('chatbots');
+  const insertBot = useInsertRow('chatbots');
+  const deleteBot = useDeleteRow('chatbots');
 
-  const filteredBots = mockBots.filter(bot =>
+  const allBots = bots ?? [];
+  const filteredBots = allBots.filter((bot) =>
     bot.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const handleCreate = async () => {
+    try {
+      await insertBot.mutateAsync({ name: 'New Bot', channel: 'web', status: 'paused', language: 'en', conversations: 0, resolution_rate: 0, escalation_rate: 0 });
+      toast.success('Chatbot created');
+    } catch {
+      toast.error('Failed to create chatbot');
+    }
+  };
+
+  const handleToggleStatus = async (bot: Chatbot) => {
+    try {
+      await updateBot.mutateAsync({ id: bot.id, values: { status: bot.status === 'live' ? 'paused' : 'live' } });
+      toast.success('Bot status updated');
+    } catch {
+      toast.error('Failed to update bot');
+    }
+  };
+
+  const handleDelete = async (bot: Chatbot) => {
+    try {
+      await deleteBot.mutateAsync(bot.id);
+      toast.success('Chatbot deleted');
+    } catch {
+      toast.error('Failed to delete chatbot');
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -58,7 +85,7 @@ export const SCChatbotList: React.FC = () => {
           <h1 className="text-2xl font-bold">Chatbots</h1>
           <p className="text-sm text-muted-foreground mt-1">Manage your support chatbots</p>
         </div>
-        <Button className="gap-2" onClick={() => toast.success('Create bot dialog would open')}>
+        <Button className="gap-2" onClick={handleCreate}>
           <Plus className="w-4 h-4" />
           New Chatbot
         </Button>
@@ -80,13 +107,18 @@ export const SCChatbotList: React.FC = () => {
 
       <Card>
         <CardContent className="p-0">
+          {isLoading ? (
+            <p className="p-8 text-center text-sm text-muted-foreground">Loading chatbots...</p>
+          ) : filteredBots.length === 0 ? (
+            <p className="p-8 text-center text-sm text-muted-foreground">No chatbots found.</p>
+          ) : (
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead className="font-semibold">Bot Name</TableHead>
                 <TableHead className="font-semibold">Channel</TableHead>
-                <TableHead className="font-semibold">Model</TableHead>
-                <TableHead className="font-semibold">Languages</TableHead>
+                <TableHead className="font-semibold">Language</TableHead>
+                <TableHead className="font-semibold">Languages Supported</TableHead>
                 <TableHead className="font-semibold">Status</TableHead>
                 <TableHead className="font-semibold text-right">Actions</TableHead>
               </TableRow>
@@ -119,11 +151,11 @@ export const SCChatbotList: React.FC = () => {
                       {bot.channel}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{bot.model}</TableCell>
+                  <TableCell className="text-muted-foreground">{bot.language}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <Globe className="w-4 h-4 text-muted-foreground" />
-                      <span>{bot.languages}</span>
+                      <span>{languages?.length ?? 0}</span>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -140,15 +172,15 @@ export const SCChatbotList: React.FC = () => {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem><Edit className="w-4 h-4 mr-2" />Edit</DropdownMenuItem>
-                        <DropdownMenuItem>
-                          {bot.status === 'active' ? (
+                        <DropdownMenuItem onClick={() => handleToggleStatus(bot)}>
+                          {bot.status === 'live' ? (
                             <><Pause className="w-4 h-4 mr-2" />Pause</>
                           ) : (
                             <><Play className="w-4 h-4 mr-2" />Activate</>
                           )}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-destructive">
+                        <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(bot)}>
                           <Trash2 className="w-4 h-4 mr-2" />Delete
                         </DropdownMenuItem>
                       </DropdownMenuContent>
@@ -158,6 +190,7 @@ export const SCChatbotList: React.FC = () => {
               ))}
             </TableBody>
           </Table>
+          )}
         </CardContent>
       </Card>
     </div>

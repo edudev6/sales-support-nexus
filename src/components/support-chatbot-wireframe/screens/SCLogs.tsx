@@ -1,7 +1,7 @@
 /**
  * LOGS SCREEN
  */
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Search, Filter, Download, AlertCircle, CheckCircle, Info, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,19 +13,14 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
+import { useBotConversationLogs, useChatbots, relativeTime } from '@/hooks/useSalesSupportData';
 
-const mockLogs = [
-  { id: '1', time: '14:32:15', level: 'info', message: 'Bot responded to user query', bot: 'Support Bot', session: 'sess_abc123' },
-  { id: '2', time: '14:32:10', level: 'success', message: 'Conversation resolved by bot', bot: 'Support Bot', session: 'sess_def456' },
-  { id: '3', time: '14:31:55', level: 'warning', message: 'Low confidence response (45%)', bot: 'Sales Assistant', session: 'sess_ghi789' },
-  { id: '4', time: '14:31:40', level: 'error', message: 'Failed to connect to AI provider', bot: 'FAQ Bot', session: 'sess_jkl012' },
-  { id: '5', time: '14:31:30', level: 'info', message: 'Human handover initiated', bot: 'Support Bot', session: 'sess_mno345' },
-  { id: '6', time: '14:31:15', level: 'success', message: 'Knowledge base updated', bot: 'Support Bot', session: 'system' },
-  { id: '7', time: '14:31:00', level: 'info', message: 'New conversation started', bot: 'Android Helper', session: 'sess_pqr678' },
-  { id: '8', time: '14:30:45', level: 'warning', message: 'Rate limit approaching (80%)', bot: 'system', session: 'system' },
-  { id: '9', time: '14:30:30', level: 'info', message: 'Auto-translation applied: es → en', bot: 'Support Bot', session: 'sess_stu901' },
-  { id: '10', time: '14:30:15', level: 'success', message: 'CSAT feedback received: 5 stars', bot: 'Support Bot', session: 'sess_vwx234' },
-];
+const outcomeToLevel = (outcome: string): 'info' | 'success' | 'warning' | 'error' => {
+  if (outcome === 'resolved') return 'success';
+  if (outcome === 'escalated' || outcome === 'handover') return 'warning';
+  if (outcome === 'failed' || outcome === 'error') return 'error';
+  return 'info';
+};
 
 const getLevelIcon = (level: string) => {
   switch (level) {
@@ -47,11 +42,28 @@ const getLevelBadge = (level: string) => {
 };
 
 export const SCLogs: React.FC = () => {
+  const { data: logs, isLoading, refetch } = useBotConversationLogs();
+  const { data: bots } = useChatbots();
   const [searchQuery, setSearchQuery] = useState('');
   const [levelFilter, setLevelFilter] = useState('all');
   const [autoRefresh, setAutoRefresh] = useState(true);
 
-  const filteredLogs = mockLogs.filter(log => {
+  const botName = (botId: string | null) => bots?.find((b) => b.id === botId)?.name ?? 'system';
+
+  const mapped = useMemo(
+    () =>
+      (logs ?? []).map((log) => ({
+        id: log.id,
+        time: relativeTime(log.created_at),
+        level: outcomeToLevel(log.outcome),
+        message: `${log.intent ?? 'Conversation'} — ${log.outcome}`,
+        bot: botName(log.bot_id),
+        session: log.session_id ?? 'system',
+      })),
+    [logs, bots],
+  );
+
+  const filteredLogs = mapped.filter((log) => {
     const matchesSearch = log.message.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           log.bot.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesLevel = levelFilter === 'all' || log.level === levelFilter;
@@ -70,7 +82,7 @@ export const SCLogs: React.FC = () => {
             variant={autoRefresh ? 'default' : 'outline'}
             size="sm"
             className="gap-2"
-            onClick={() => setAutoRefresh(!autoRefresh)}
+            onClick={() => { setAutoRefresh(!autoRefresh); if (!autoRefresh) refetch(); }}
           >
             <RefreshCw className={`w-4 h-4 ${autoRefresh ? 'animate-spin' : ''}`} />
             {autoRefresh ? 'Live' : 'Paused'}
@@ -122,6 +134,11 @@ export const SCLogs: React.FC = () => {
         </CardHeader>
         <CardContent className="p-0">
           <ScrollArea className="h-[500px]">
+            {isLoading ? (
+              <p className="p-8 text-center text-sm text-muted-foreground">Loading logs...</p>
+            ) : filteredLogs.length === 0 ? (
+              <p className="p-8 text-center text-sm text-muted-foreground">No logs found.</p>
+            ) : (
             <div className="divide-y">
               {filteredLogs.map((log, index) => (
                 <motion.div
@@ -151,6 +168,7 @@ export const SCLogs: React.FC = () => {
                 </motion.div>
               ))}
             </div>
+            )}
           </ScrollArea>
         </CardContent>
       </Card>
