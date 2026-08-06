@@ -7,35 +7,58 @@ import { Bot, MessageSquare, Ticket, Clock, ThumbsUp, ArrowUpRight, ArrowDownRig
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, PieChart, Pie, Cell } from 'recharts';
 import type { ChatbotScreen } from '../SupportChatbotWireframe';
+import {
+  useChatbots,
+  useChatSessions,
+  useTickets,
+  useBotConversationLogs,
+  useTeamMembers,
+} from '@/hooks/useSalesSupportData';
 
 interface SCDashboardProps {
   onNavigate: (screen: ChatbotScreen) => void;
 }
 
-const conversationsData = [
-  { day: 'Mon', chats: 145 },
-  { day: 'Tue', chats: 189 },
-  { day: 'Wed', chats: 167 },
-  { day: 'Thu', chats: 234 },
-  { day: 'Fri', chats: 198 },
-  { day: 'Sat', chats: 89 },
-  { day: 'Sun', chats: 67 },
-];
-
-const resolutionData = [
-  { name: 'Bot Resolved', value: 68 },
-  { name: 'Human Resolved', value: 32 },
-];
-
 const COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))'];
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export const SCDashboard: React.FC<SCDashboardProps> = ({ onNavigate }) => {
+  const { data: bots = [] } = useChatbots();
+  const { data: sessions = [] } = useChatSessions();
+  const { data: tickets = [] } = useTickets();
+  const { data: logs = [] } = useBotConversationLogs();
+  const { data: support = [] } = useTeamMembers('support');
+
+  const activeBots = bots.filter((b) => b.status === 'active').length;
+  const liveSessions = sessions.filter((s) => s.status === 'active').length;
+  const openTickets = tickets.filter((t) => !['resolved', 'closed'].includes(t.status)).length;
+  const avgResponse = support.length
+    ? Math.round(support.reduce((a, m) => a + (m.avg_response_minutes ?? 0), 0) / support.length)
+    : 0;
+  const csatValues = tickets.map((t) => t.csat).filter((c): c is number => typeof c === 'number');
+  const csat = csatValues.length
+    ? Math.round((csatValues.reduce((a, c) => a + c, 0) / (csatValues.length * 5)) * 100)
+    : 0;
+
+  const conversationsData = DAYS.map((day, i) => ({
+    day,
+    chats: sessions.filter((s) => new Date(s.started_at).getDay() === i).length,
+  }));
+
+  const botResolved = logs.filter((l) => l.outcome === 'resolved').length;
+  const humanResolved = logs.filter((l) => l.outcome !== 'resolved').length;
+  const totalResolved = botResolved + humanResolved || 1;
+  const resolutionData = [
+    { name: 'Bot Resolved', value: Math.round((botResolved / totalResolved) * 100) },
+    { name: 'Human Resolved', value: Math.round((humanResolved / totalResolved) * 100) },
+  ];
+
   const stats = [
-    { label: 'Active Chatbots', value: '5', change: '+1', up: true, icon: Bot, color: 'bg-emerald-500/10 text-emerald-600' },
-    { label: 'Live Conversations', value: '23', change: '+8', up: true, icon: MessageSquare, color: 'bg-blue-500/10 text-blue-600' },
-    { label: 'Open Tickets', value: '12', change: '-3', up: false, icon: Ticket, color: 'bg-orange-500/10 text-orange-600' },
-    { label: 'Avg Response', value: '1.2s', change: '-0.3s', up: true, icon: Clock, color: 'bg-purple-500/10 text-purple-600' },
-    { label: 'CSAT Score', value: '94%', change: '+2%', up: true, icon: ThumbsUp, color: 'bg-green-500/10 text-green-600' },
+    { label: 'Active Chatbots', value: String(activeBots), change: `${bots.length} total`, up: true, icon: Bot, color: 'bg-emerald-500/10 text-emerald-600' },
+    { label: 'Live Conversations', value: String(liveSessions), change: `${sessions.length} total`, up: true, icon: MessageSquare, color: 'bg-blue-500/10 text-blue-600' },
+    { label: 'Open Tickets', value: String(openTickets), change: `${tickets.length} total`, up: false, icon: Ticket, color: 'bg-orange-500/10 text-orange-600' },
+    { label: 'Avg Response', value: `${avgResponse}m`, change: 'support team', up: true, icon: Clock, color: 'bg-purple-500/10 text-purple-600' },
+    { label: 'CSAT Score', value: `${csat}%`, change: `${csatValues.length} ratings`, up: true, icon: ThumbsUp, color: 'bg-green-500/10 text-green-600' },
   ];
 
   return (
