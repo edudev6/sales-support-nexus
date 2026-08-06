@@ -54,7 +54,7 @@ const SalesSupportDashboardContent = ({ activeSection }: SalesSupportDashboardCo
   const allCalls = calls ?? [];
   const allChats = chatSessions ?? [];
 
-  const managers = allMembers.filter((m) => m.role?.toLowerCase().includes("manager")).length || allMembers.length;
+  const managers = allMembers.filter((m) => m.role_title?.toLowerCase().includes("manager")).length || allMembers.length;
   const online = allMembers.filter((m) => m.status === "online" || m.status === "active").length;
   const away = allMembers.filter((m) => m.status === "away").length;
   const openTickets = allTickets.filter((t) => t.status === "open" || t.status === "pending").length;
@@ -89,7 +89,7 @@ const SalesSupportDashboardContent = ({ activeSection }: SalesSupportDashboardCo
       .map((l) => ({ id: `lead-${l.id}`, action: "Lead Converted", target: l.company, time: l.updated_at })),
     ...allCalls
       .filter((c) => c.status === "completed")
-      .map((c) => ({ id: `call-${c.id}`, action: "Call Completed", target: c.contact_name ?? c.id, time: c.started_at })),
+      .map((c) => ({ id: `call-${c.id}`, action: "Call Completed", target: c.caller_name ?? c.id, time: c.started_at })),
     ...allEscalations.map((e) => ({ id: `esc-${e.id}`, action: "Issue Escalated", target: e.title ?? e.id, time: e.created_at })),
   ]
     .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
@@ -199,7 +199,7 @@ const SalesSupportDashboardContent = ({ activeSection }: SalesSupportDashboardCo
                       </div>
                       <div>
                         <p className="text-sm font-medium text-foreground">{member.full_name}</p>
-                        <p className="text-xs text-muted-foreground">{member.region ?? member.department ?? "—"}</p>
+                        <p className="text-xs text-muted-foreground">{member.department ?? member.department ?? "—"}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -364,7 +364,7 @@ const SalesSupportDashboardContent = ({ activeSection }: SalesSupportDashboardCo
                     <div>
                       <p className="font-semibold text-foreground">{member.full_name}</p>
                       <p className="text-sm text-muted-foreground">
-                        {member.region ?? member.department ?? "—"} • {memberTickets} tickets • {memberLeads} leads
+                        {member.department ?? member.department ?? "—"} • {memberTickets} tickets • {memberLeads} leads
                       </p>
                     </div>
                   </div>
@@ -511,10 +511,10 @@ const SalesSupportDashboardContent = ({ activeSection }: SalesSupportDashboardCo
             {allEscalations.map((esc) => (
               <div key={esc.id} className="flex items-center justify-between p-4 bg-background/50 rounded-xl border border-border/50">
                 <div>
-                  <p className="font-semibold text-foreground">{esc.title ?? esc.id}</p>
+                  <p className="font-semibold text-foreground">{esc.reason ?? esc.id}</p>
                   <p className="text-sm text-muted-foreground">Level {esc.level} • {esc.status}</p>
                 </div>
-                <Button size="sm" variant="outline" onClick={() => handleAction("View", esc.title ?? esc.id)}>View</Button>
+                <Button size="sm" variant="outline" onClick={() => handleAction("View", esc.reason ?? esc.id)}>View</Button>
               </div>
             ))}
           </div>
