@@ -3,76 +3,64 @@
  * Chat transcripts, AI confidence, errors
  */
 
-import React, { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import React, { useMemo, useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { 
+import {
   Search,
   Download,
   MessageSquare,
   Brain,
   AlertTriangle,
-  Star,
   Clock,
   User,
   Bot,
-  Filter,
   ThumbsUp,
-  ThumbsDown
+  ThumbsDown,
 } from 'lucide-react';
-
-interface Transcript {
-  id: string;
-  user: string;
-  summary: string;
-  date: string;
-  duration: string;
-  satisfaction: 'positive' | 'negative' | 'neutral';
-  resolvedBy: 'bot' | 'human';
-}
-
-interface AILog {
-  id: string;
-  query: string;
-  confidence: number;
-  response: string;
-  time: string;
-}
-
-interface ErrorLog {
-  id: string;
-  type: string;
-  message: string;
-  time: string;
-  resolved: boolean;
-}
-
-const transcripts: Transcript[] = [
-  { id: '1', user: 'Sarah J.', summary: 'Password reset request - Resolved', date: 'Today, 10:32 AM', duration: '4 min', satisfaction: 'positive', resolvedBy: 'bot' },
-  { id: '2', user: 'Rahul S.', summary: 'Billing inquiry - Transferred to agent', date: 'Today, 10:15 AM', duration: '12 min', satisfaction: 'neutral', resolvedBy: 'human' },
-  { id: '3', user: 'Emma W.', summary: 'Product question - Resolved', date: 'Today, 09:45 AM', duration: '3 min', satisfaction: 'positive', resolvedBy: 'bot' },
-  { id: '4', user: 'Carlos G.', summary: 'Complaint about service', date: 'Yesterday', duration: '18 min', satisfaction: 'negative', resolvedBy: 'human' },
-];
-
-const aiLogs: AILog[] = [
-  { id: '1', query: 'How do I reset my password?', confidence: 98, response: 'Password reset instructions sent', time: '10:32 AM' },
-  { id: '2', query: 'What are your business hours?', confidence: 95, response: 'Business hours information provided', time: '10:28 AM' },
-  { id: '3', query: 'I want to cancel my subscription', confidence: 72, response: 'Transferred to human agent', time: '10:15 AM' },
-  { id: '4', query: 'asdfghjkl', confidence: 12, response: 'Asked for clarification', time: '10:10 AM' },
-];
-
-const errorLogs: ErrorLog[] = [
-  { id: '1', type: 'API Timeout', message: 'Translation service timeout after 5s', time: '09:45 AM', resolved: false },
-  { id: '2', type: 'Rate Limit', message: 'API rate limit reached (1000 req/min)', time: '09:30 AM', resolved: true },
-  { id: '3', type: 'Connection', message: 'WebSocket disconnection detected', time: 'Yesterday', resolved: true },
-];
+import {
+  useBotConversationLogs,
+  useChatbots,
+  useChatSessions,
+  relativeTime,
+} from '@/hooks/useSalesSupportData';
 
 export const CBAnalyticsLogs: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
+  const { data: logs, isLoading: logsLoading } = useBotConversationLogs();
+  const { data: chatbots, isLoading: botsLoading } = useChatbots();
+  const { data: sessions } = useChatSessions();
+
+  const isLoading = logsLoading || botsLoading;
+  const logsList = logs ?? [];
+
+  const filteredLogs = useMemo(() => {
+    if (!searchQuery.trim()) return logsList;
+    const q = searchQuery.toLowerCase();
+    return logsList.filter(
+      (l) => (l.intent ?? '').toLowerCase().includes(q) || l.outcome.toLowerCase().includes(q),
+    );
+  }, [logsList, searchQuery]);
+
+  const totalChats = logsList.length;
+  const avgConfidence = logsList.length
+    ? Math.round(logsList.reduce((sum, l) => sum + (l.confidence ?? 0), 0) / logsList.length)
+    : 0;
+  const resolvedByBot = logsList.filter((l) => l.outcome === 'resolved').length;
+  const positivePct = totalChats ? Math.round((resolvedByBot / totalChats) * 100) : 0;
+  const errorLogs = logsList.filter((l) => l.outcome === 'error' || l.outcome === 'failed');
+
+  const sessionMap = new Map((sessions ?? []).map((s) => [s.id, s]));
+
+  const stats = [
+    { label: 'Total Chats', value: String(totalChats), icon: MessageSquare, color: 'blue' },
+    { label: 'Avg Confidence', value: `${avgConfidence}%`, icon: Brain, color: 'violet' },
+    { label: 'Resolved by Bot', value: `${positivePct}%`, icon: ThumbsUp, color: 'emerald' },
+    { label: 'Errors', value: String(errorLogs.length), icon: AlertTriangle, color: 'orange' },
+  ];
 
   return (
     <div className="space-y-6">
@@ -90,12 +78,7 @@ export const CBAnalyticsLogs: React.FC = () => {
 
       {/* Quick Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {[
-          { label: 'Total Chats', value: '1,247', icon: MessageSquare, color: 'blue' },
-          { label: 'Avg Confidence', value: '91%', icon: Brain, color: 'violet' },
-          { label: 'Positive Feedback', value: '94%', icon: ThumbsUp, color: 'emerald' },
-          { label: 'Errors Today', value: '3', icon: AlertTriangle, color: 'orange' },
-        ].map((stat, idx) => {
+        {stats.map((stat, idx) => {
           const Icon = stat.icon;
           return (
             <Card key={idx} className="bg-white border-slate-200 shadow-sm rounded-xl">
@@ -116,10 +99,10 @@ export const CBAnalyticsLogs: React.FC = () => {
       <Tabs defaultValue="transcripts" className="space-y-4">
         <div className="flex flex-col sm:flex-row gap-4 justify-between">
           <TabsList className="bg-slate-100">
-            <TabsTrigger value="transcripts">💬 Chat Transcripts</TabsTrigger>
+            <TabsTrigger value="transcripts">💬 Conversation Logs</TabsTrigger>
             <TabsTrigger value="ai-logs">🤖 AI Confidence</TabsTrigger>
             <TabsTrigger value="errors">⚠️ Error Logs</TabsTrigger>
-            <TabsTrigger value="feedback">⭐ Feedback</TabsTrigger>
+            <TabsTrigger value="bots">🧩 Bots</TabsTrigger>
           </TabsList>
 
           <div className="relative w-full sm:w-64">
@@ -137,43 +120,50 @@ export const CBAnalyticsLogs: React.FC = () => {
         <TabsContent value="transcripts">
           <Card className="bg-white border-slate-200 shadow-sm rounded-xl">
             <CardContent className="p-0">
-              <div className="divide-y divide-slate-100">
-                {transcripts.map((t) => (
-                  <div key={t.id} className="p-4 hover:bg-slate-50 transition-colors cursor-pointer">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-start gap-3">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-medium text-sm">
-                          {t.user.split(' ').map(n => n[0]).join('')}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-medium text-slate-800">{t.user}</span>
-                            <Badge variant="outline" className={`text-[10px] ${
-                              t.resolvedBy === 'bot' 
-                                ? 'bg-blue-50 text-blue-700' 
-                                : 'bg-emerald-50 text-emerald-700'
-                            }`}>
-                              {t.resolvedBy === 'bot' ? <Bot className="w-3 h-3 mr-1" /> : <User className="w-3 h-3 mr-1" />}
-                              {t.resolvedBy}
-                            </Badge>
-                          </div>
-                          <p className="text-sm text-slate-600">{t.summary}</p>
-                          <div className="flex items-center gap-3 mt-2 text-xs text-slate-400">
-                            <span className="flex items-center gap-1">
-                              <Clock className="w-3 h-3" /> {t.date}
-                            </span>
-                            <span>• {t.duration}</span>
+              {isLoading ? (
+                <p className="text-sm text-slate-400 py-8 text-center">Loading conversation logs…</p>
+              ) : filteredLogs.length === 0 ? (
+                <p className="text-sm text-slate-400 py-8 text-center">No conversation logs found.</p>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {filteredLogs.map((log) => {
+                    const session = log.session_id ? sessionMap.get(log.session_id) : undefined;
+                    const resolvedByHuman = session?.handled_by === 'human';
+                    return (
+                      <div key={log.id} className="p-4 hover:bg-slate-50 transition-colors">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-start gap-3">
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-medium text-sm">
+                              {(session?.visitor_name ?? 'NA').split(' ').map((n) => n[0]).join('').slice(0, 2)}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="font-medium text-slate-800">{session?.visitor_name ?? 'Unknown visitor'}</span>
+                                <Badge
+                                  variant="outline"
+                                  className={`text-[10px] ${
+                                    resolvedByHuman ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'
+                                  }`}
+                                >
+                                  {resolvedByHuman ? <User className="w-3 h-3 mr-1" /> : <Bot className="w-3 h-3 mr-1" />}
+                                  {resolvedByHuman ? 'human' : 'bot'}
+                                </Badge>
+                              </div>
+                              <p className="text-sm text-slate-600">{log.intent ?? 'Unclassified'} — {log.outcome}</p>
+                              <div className="flex items-center gap-3 mt-2 text-xs text-slate-400">
+                                <span className="flex items-center gap-1">
+                                  <Clock className="w-3 h-3" /> {relativeTime(log.created_at)}
+                                </span>
+                                <span>• {log.message_count} messages</span>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        {t.satisfaction === 'positive' && <ThumbsUp className="w-4 h-4 text-emerald-500" />}
-                        {t.satisfaction === 'negative' && <ThumbsDown className="w-4 h-4 text-red-500" />}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -182,31 +172,40 @@ export const CBAnalyticsLogs: React.FC = () => {
         <TabsContent value="ai-logs">
           <Card className="bg-white border-slate-200 shadow-sm rounded-xl">
             <CardContent className="p-0">
-              <div className="divide-y divide-slate-100">
-                {aiLogs.map((log) => (
-                  <div key={log.id} className="p-4">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <p className="font-medium text-slate-800">"{log.query}"</p>
-                        <p className="text-sm text-slate-500 mt-1">→ {log.response}</p>
-                        <span className="text-xs text-slate-400 mt-2 block">{log.time}</span>
-                      </div>
-                      <div className="ml-4">
-                        <div className={`text-center px-3 py-2 rounded-lg ${
-                          log.confidence >= 90 ? 'bg-emerald-50' :
-                          log.confidence >= 60 ? 'bg-amber-50' : 'bg-red-50'
-                        }`}>
-                          <p className={`text-lg font-bold ${
-                            log.confidence >= 90 ? 'text-emerald-600' :
-                            log.confidence >= 60 ? 'text-amber-600' : 'text-red-600'
-                          }`}>{log.confidence}%</p>
-                          <p className="text-[10px] text-slate-500">confidence</p>
+              {isLoading ? (
+                <p className="text-sm text-slate-400 py-8 text-center">Loading logs…</p>
+              ) : filteredLogs.length === 0 ? (
+                <p className="text-sm text-slate-400 py-8 text-center">No logs found.</p>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {filteredLogs.map((log) => {
+                    const confidence = Math.round(log.confidence ?? 0);
+                    return (
+                      <div key={log.id} className="p-4">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <p className="font-medium text-slate-800">{log.intent ?? 'Unclassified intent'}</p>
+                            <p className="text-sm text-slate-500 mt-1">→ {log.outcome}</p>
+                            <span className="text-xs text-slate-400 mt-2 block">{relativeTime(log.created_at)}</span>
+                          </div>
+                          <div className="ml-4">
+                            <div className={`text-center px-3 py-2 rounded-lg ${
+                              confidence >= 90 ? 'bg-emerald-50' :
+                              confidence >= 60 ? 'bg-amber-50' : 'bg-red-50'
+                            }`}>
+                              <p className={`text-lg font-bold ${
+                                confidence >= 90 ? 'text-emerald-600' :
+                                confidence >= 60 ? 'text-amber-600' : 'text-red-600'
+                              }`}>{confidence}%</p>
+                              <p className="text-[10px] text-slate-500">confidence</p>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -215,74 +214,55 @@ export const CBAnalyticsLogs: React.FC = () => {
         <TabsContent value="errors">
           <Card className="bg-white border-slate-200 shadow-sm rounded-xl">
             <CardContent className="p-0">
-              <div className="divide-y divide-slate-100">
-                {errorLogs.map((err) => (
-                  <div key={err.id} className="p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                        err.resolved ? 'bg-emerald-100' : 'bg-red-100'
-                      }`}>
-                        <AlertTriangle className={`w-5 h-5 ${
-                          err.resolved ? 'text-emerald-600' : 'text-red-600'
-                        }`} />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-slate-800">{err.type}</span>
-                          <Badge variant="outline" className={`text-[10px] ${
-                            err.resolved ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
-                          }`}>
-                            {err.resolved ? 'Resolved' : 'Active'}
-                          </Badge>
+              {errorLogs.length === 0 ? (
+                <p className="text-sm text-slate-400 py-8 text-center">No errors recorded.</p>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {errorLogs.map((err) => (
+                    <div key={err.id} className="p-4 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-red-100">
+                          <AlertTriangle className="w-5 h-5 text-red-600" />
                         </div>
-                        <p className="text-sm text-slate-500">{err.message}</p>
-                        <span className="text-xs text-slate-400">{err.time}</span>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-slate-800">{err.outcome}</span>
+                            <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700">Active</Badge>
+                          </div>
+                          <p className="text-sm text-slate-500">{err.intent ?? 'No intent detected'}</p>
+                          <span className="text-xs text-slate-400">{relativeTime(err.created_at)}</span>
+                        </div>
                       </div>
                     </div>
-                    {!err.resolved && (
-                      <Button size="sm" variant="outline">Mark Resolved</Button>
-                    )}
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* Feedback Tab */}
-        <TabsContent value="feedback">
+        {/* Bots Tab */}
+        <TabsContent value="bots">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Card className="bg-white border-slate-200 shadow-sm rounded-xl">
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <ThumbsUp className="w-5 h-5 text-emerald-600" />
-                  Positive Feedback
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {['Fast response time!', 'Very helpful bot', 'Solved my issue quickly'].map((fb, idx) => (
-                  <div key={idx} className="p-3 bg-emerald-50 rounded-lg text-sm text-emerald-800">
-                    "{fb}"
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-
-            <Card className="bg-white border-slate-200 shadow-sm rounded-xl">
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <ThumbsDown className="w-5 h-5 text-red-600" />
-                  Areas to Improve
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {['Bot didn\'t understand my question', 'Took too long to connect to agent'].map((fb, idx) => (
-                  <div key={idx} className="p-3 bg-red-50 rounded-lg text-sm text-red-800">
-                    "{fb}"
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
+            {(chatbots ?? []).map((bot) => (
+              <Card key={bot.id} className="bg-white border-slate-200 shadow-sm rounded-xl">
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Bot className="w-5 h-5 text-blue-600" />
+                    {bot.name}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm text-slate-600">
+                  <p>Channel: {bot.channel}</p>
+                  <p>Conversations: {bot.conversations}</p>
+                  <p>Resolution rate: {bot.resolution_rate}%</p>
+                  <p>Escalation rate: {bot.escalation_rate}%</p>
+                </CardContent>
+              </Card>
+            ))}
+            {(!chatbots || chatbots.length === 0) && (
+              <p className="text-sm text-slate-400 py-8 text-center col-span-2">No chatbots configured.</p>
+            )}
           </div>
         </TabsContent>
       </Tabs>
