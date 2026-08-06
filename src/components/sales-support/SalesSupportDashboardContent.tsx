@@ -90,7 +90,7 @@ const SalesSupportDashboardContent = ({ activeSection }: SalesSupportDashboardCo
     ...allCalls
       .filter((c) => c.status === "completed")
       .map((c) => ({ id: `call-${c.id}`, action: "Call Completed", target: c.caller_name ?? c.id, time: c.started_at })),
-    ...allEscalations.map((e) => ({ id: `esc-${e.id}`, action: "Issue Escalated", target: e.title ?? e.id, time: e.created_at })),
+    ...allEscalations.map((e) => ({ id: `esc-${e.id}`, action: "Issue Escalated", target: e.reference ?? e.reason, time: e.created_at })),
   ]
     .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
     .slice(0, 6);
