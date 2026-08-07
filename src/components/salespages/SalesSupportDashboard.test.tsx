@@ -26,6 +26,10 @@ const leadRows = [
   { id: "l4", urgency: "warm", stage: "new", created_at: now },
 ];
 
+// vi.mock factories are hoisted, so the fake client is reached through a
+// hoisted holder that is populated once this module evaluates.
+const holder = vi.hoisted(() => ({ from: (() => {}) as (table: string) => any }));
+
 const fake = createFakeSupabase({
   support_tickets: ticketRows,
   support_escalations: escalationRows,
@@ -34,7 +38,11 @@ const fake = createFakeSupabase({
   team_members: [],
 });
 
-vi.mock("@/integrations/supabase/client", () => ({ supabase: fake.client }));
+vi.mock("@/integrations/supabase/client", () => ({
+  supabase: { from: (table: string) => holder.from(table) },
+}));
+
+holder.from = fake.client.from;
 
 const navigate = vi.fn();
 vi.mock("@tanstack/react-router", () => ({
@@ -111,8 +119,8 @@ describe("Dashboard KPIs render from live queries", () => {
 
   it("renders zeros instead of placeholder numbers when the tables are empty", async () => {
     const empty = createFakeSupabase({});
-    const original = fake.client.from;
-    fake.client.from = empty.client.from;
+    const original = holder.from;
+    holder.from = empty.client.from;
     try {
       render(withQueryClient(<SalesSupportDashboard />));
       await waitFor(() => expect(kpiValue("Tickets Waiting")).toBe("0"));
@@ -120,7 +128,7 @@ describe("Dashboard KPIs render from live queries", () => {
       expect(kpiValue("Missed Calls")).toBe("0");
       expect(kpiValue("Hot Sales Leads")).toBe("0");
     } finally {
-      fake.client.from = original;
+      holder.from = original;
     }
   });
 });

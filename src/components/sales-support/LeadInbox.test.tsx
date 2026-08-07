@@ -93,9 +93,17 @@ const leadRows = [
 
 const memberRows = [{ id: "m1", full_name: "Priya Nair", department: "sales" }];
 
+// vi.mock factories are hoisted, so the fake client is reached through a
+// hoisted holder that is populated once this module evaluates.
+const holder = vi.hoisted(() => ({ from: (() => {}) as (table: string) => any }));
+
 const fake = createFakeSupabase({ sales_leads: leadRows, team_members: memberRows });
 
-vi.mock("@/integrations/supabase/client", () => ({ supabase: fake.client }));
+vi.mock("@/integrations/supabase/client", () => ({
+  supabase: { from: (table: string) => holder.from(table) },
+}));
+
+holder.from = fake.client.from;
 
 import LeadInbox from "@/components/sales-support/LeadInbox";
 
@@ -167,8 +175,8 @@ describe("LeadInbox renders from live queries", () => {
 
   it("renders an empty state rather than placeholder rows when there are no leads", async () => {
     const empty = createFakeSupabase({ sales_leads: [], team_members: [] });
-    const original = fake.client.from;
-    fake.client.from = empty.client.from;
+    const original = holder.from;
+    holder.from = empty.client.from;
     try {
       render(withQueryClient(<LeadInbox />));
       await waitFor(() =>
@@ -177,7 +185,7 @@ describe("LeadInbox renders from live queries", () => {
       expect(screen.getByText("0 Hot")).toBeInTheDocument();
       expect(tileValue("Total Leads")).toBe("0");
     } finally {
-      fake.client.from = original;
+      holder.from = original;
     }
   });
 });
