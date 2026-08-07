@@ -109,9 +109,11 @@ import LeadInbox from "@/components/sales-support/LeadInbox";
 
 /** Reads the number rendered directly above a KPI/badge caption. */
 function tileValue(label: string) {
-  const caption = screen.getByText(label);
-  const value = caption.parentElement?.querySelector("div.text-2xl");
-  return value?.textContent ?? "";
+  const captions = screen
+    .getAllByText(label)
+    .filter((el) => el.classList.contains("text-xs"));
+  const value = captions[0]?.parentElement?.querySelector("div.text-2xl");
+  return value?.textContent?.trim() ?? "";
 }
 
 describe("LeadInbox renders from live queries", () => {
